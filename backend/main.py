@@ -51,7 +51,7 @@ app.add_middleware(
 )
 
 # Import and register routers
-from routers import search, music, library, playlists, lyrics, history
+from routers import search, music, library, playlists, lyrics, history, recommendations
 
 app.include_router(search.router)
 app.include_router(music.router)
@@ -59,6 +59,7 @@ app.include_router(library.router)
 app.include_router(playlists.router)
 app.include_router(lyrics.router)
 app.include_router(history.router)
+app.include_router(recommendations.router)
 
 
 # ─── Equalizer endpoint (simple, kept in main) ───

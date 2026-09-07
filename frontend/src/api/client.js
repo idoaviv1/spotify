@@ -132,6 +132,23 @@ export const api = {
   deletePlaylist: (id) =>
     request(`/api/playlists/${id}`, { method: 'DELETE' }),
 
+  uploadPlaylistCover: async (playlistId, file) => {
+    const base = getServerUrl();
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${base}/api/playlists/${playlistId}/cover`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) throw new Error('Failed to upload playlist cover');
+    return res.json();
+  },
+
+  getPlaylistCoverUrl: (playlistId) => `${getServerUrl()}/api/playlists/${playlistId}/cover`,
+
+  // Recommendations based on listening history
+  getRecommendations: (limit = 10) => request(`/api/recommendations?limit=${limit}`),
+
   addSongToPlaylist: (playlistId, songId) =>
     request(`/api/playlists/${playlistId}/songs`, { method: 'POST', body: { song_id: songId } }),
 

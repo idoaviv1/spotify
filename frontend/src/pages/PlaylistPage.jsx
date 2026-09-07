@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import usePlayerStore from '../stores/playerStore';
@@ -12,7 +12,7 @@ import {
   IconDownload,
   IconOffline,
 } from '../components/common/Icons';
-import { isSongOffline, downloadAndCacheSong } from '../utils/storage';
+import { isSongOffline, downloadSongEverywhere } from '../utils/storage';
 
 export default function PlaylistPage() {
   const { id } = useParams();
@@ -22,6 +22,8 @@ export default function PlaylistPage() {
   const [error, setError] = useState(null);
   const [offlineStatus, setOfflineStatus] = useState({});
   const [cachingId, setCachingId] = useState(null);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const fileInputRef = useRef(null);
 
   const playSong = usePlayerStore((s) => s.playSong);
   const playList = usePlayerStore((s) => s.playList);
@@ -77,14 +79,30 @@ export default function PlaylistPage() {
     }
   }
 
+  async function handleCoverUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingCover(true);
+    try {
+      const res = await api.uploadPlaylistCover(id, file);
+      setPlaylist((prev) => ({
+        ...prev,
+        cover_image: `${res.cover_url}?t=${Date.now()}`,
+      }));
+    } catch (err) {
+      alert('Failed to upload cover: ' + err.message);
+    }
+    setIsUploadingCover(false);
+  }
+
   async function handleCacheOffline(song, e) {
     e.stopPropagation();
-    if (!song.id || cachingId) return;
-    setCachingId(song.id);
+    const songId = song.id || song.songId;
+    if (!songId || cachingId) return;
+    setCachingId(songId);
     try {
-      const streamUrl = api.getStreamUrl(song.id);
-      await downloadAndCacheSong(song.id, streamUrl, song.cover_art_url, song);
-      setOfflineStatus((prev) => ({ ...prev, [song.id]: true }));
+      await downloadSongEverywhere(song);
+      setOfflineStatus((prev) => ({ ...prev, [songId]: true }));
     } catch (err) {
       console.error('Failed to cache song:', err);
     }
@@ -163,10 +181,18 @@ export default function PlaylistPage() {
           ✕
         </button>
 
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleCoverUpload}
+        />
         <div
+          onClick={() => fileInputRef.current?.click()}
           style={{
-            width: 'clamp(80px, 22vw, 120px)',
-            height: 'clamp(80px, 22vw, 120px)',
+            width: 'clamp(85px, 24vw, 130px)',
+            height: 'clamp(85px, 24vw, 130px)',
             borderRadius: 'var(--radius-md)',
             background: 'linear-gradient(135deg, var(--accent-dim), var(--bg-highlight))',
             display: 'flex',
@@ -175,7 +201,10 @@ export default function PlaylistPage() {
             flexShrink: 0,
             boxShadow: 'var(--shadow-md)',
             overflow: 'hidden',
+            position: 'relative',
+            cursor: 'pointer',
           }}
+          title="Click to change playlist cover"
         >
           {playlist.cover_image ? (
             <img
@@ -183,9 +212,33 @@ export default function PlaylistPage() {
               alt=""
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
+          ) : songs[0]?.cover_art_url ? (
+            <img
+              src={songs[0].cover_art_url}
+              alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
           ) : (
             <IconMusic size={36} style={{ color: 'var(--accent)' }} />
           )}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: isUploadingCover ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: isUploadingCover ? 1 : 0.85,
+              transition: 'opacity 0.2s ease',
+            }}
+          >
+            {isUploadingCover ? (
+              <div className="loading-spinner" style={{ width: 20, height: 20 }} />
+            ) : (
+              <span style={{ fontSize: '1.25rem', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.8))' }}>📷</span>
+            )}
+          </div>
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>

@@ -1,13 +1,16 @@
-"""Playlists router - CRUD for playlists and playlist songs."""
+import os
+import shutil
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
 
 from database import get_db, Playlist, PlaylistSong, Song
+from config import COVERS_DIR
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
 
@@ -160,3 +163,47 @@ async def reorder_playlist(playlist_id: str, song_ids: list[str], db: Session = 
     db.commit()
 
     return {"status": "reordered"}
+
+
+@router.post("/{playlist_id}/cover")
+async def upload_playlist_cover(
+    playlist_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Upload a custom cover image for a playlist."""
+    playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".jpg"
+    if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+        ext = ".jpg"
+
+    cover_filename = f"playlist_{playlist_id}{ext}"
+    cover_path = COVERS_DIR / cover_filename
+
+    with open(cover_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    playlist.cover_image = f"/api/playlists/{playlist_id}/cover"
+    playlist.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(playlist)
+
+    return {"status": "success", "cover_url": playlist.cover_image, "playlist": playlist.to_dict()}
+
+
+@router.get("/{playlist_id}/cover")
+async def get_playlist_cover(playlist_id: str, db: Session = Depends(get_db)):
+    """Serve the playlist custom cover image."""
+    playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+        cover_path = COVERS_DIR / f"playlist_{playlist_id}{ext}"
+        if cover_path.exists():
+            return FileResponse(cover_path)
+
+    raise HTTPException(status_code=404, detail="Playlist cover not found")
