@@ -1,0 +1,15 @@
+[Unit]
+Description=SonicLink Personal Music Server (Tailscale)
+After=network.target tailscaled.service
+
+[Service]
+Type=simple
+User=idodi
+WorkingDirectory=/home/idodi/Desktop/project/spotify
+ExecStart=/home/idodi/Desktop/project/spotify/backend/venv/bin/python /home/idodi/Desktop/project/spotify/backend/main.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

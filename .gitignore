@@ -1,0 +1,39 @@
+# Node
+node_modules/
+dist/
+.vite/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+backend/venv/
+.venv/
+venv/
+*.egg-info/
+
+# Local data & music files (stored locally / on Windows)
+backend/data/music/*
+!backend/data/music/.gitkeep
+backend/data/covers/*
+!backend/data/covers/.gitkeep
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# iOS Build Artifacts
+frontend/ios/App/build/
+frontend/ios/App/Pods/
+frontend/ios/App/Podfile.lock
+*.ipa
+Payload/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
