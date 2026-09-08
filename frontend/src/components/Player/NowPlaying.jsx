@@ -3,10 +3,13 @@ import usePlayerStore from '../../stores/playerStore';
 import {
   IconPlay, IconPause, IconSkipNext, IconSkipPrev,
   IconChevronDown, IconShuffle, IconRepeat, IconRepeatOne,
-  IconQueue, IconLyrics, IconDownload, IconEqualizer, IconOffline
+  IconQueue, IconLyrics, IconDownload, IconEqualizer, IconOffline,
+  IconHeart, IconVisualizer, IconMoon, IconShare
 } from '../common/Icons';
 import { formatDuration } from '../../utils/format';
 import { downloadSongEverywhere, isSongOffline } from '../../utils/storage';
+import { shareSong } from '../../utils/share';
+import { triggerHaptic } from '../../utils/haptics';
 
 export default function NowPlaying({ onOpenEqualizer }) {
   const {
@@ -16,10 +19,17 @@ export default function NowPlaying({ onOpenEqualizer }) {
     toggleShuffle, toggleRepeat,
     isNowPlayingOpen, setNowPlayingOpen,
     toggleLyrics, toggleQueue,
+    toggleSleepTimer, sleepTimerMinutes,
+    toggleVisualizer,
+    isFavorite, toggleFavorite,
   } = usePlayerStore();
+
+  const currentSongId = currentSong ? String(currentSong.id || currentSong.songId || currentSong.youtube_id || '') : '';
+  const isLiked = isFavorite(currentSongId);
 
   const [isDownloading, setIsDownloading] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+  const [isMoonAnimated, setIsMoonAnimated] = useState(false);
   const [scrubTime, setScrubTime] = useState(null);
   const [dragY, setDragY] = useState(0);
 
@@ -31,11 +41,21 @@ export default function NowPlaying({ onOpenEqualizer }) {
 
   // Check offline availability on song change
   useEffect(() => {
+    let active = true;
     if (currentSong) {
-      isSongOffline(currentSong).then(setIsOffline).catch(() => {});
+      isSongOffline(currentSong)
+        .then((offline) => {
+          if (active) setIsOffline(offline);
+        })
+        .catch(() => {});
     } else {
-      setIsOffline(false);
+      queueMicrotask(() => {
+        if (active) setIsOffline(false);
+      });
     }
+    return () => {
+      active = false;
+    };
   }, [currentSong]);
 
   // ─── Live Scrubber (Calculate time on drag, seek ONLY on release) ───
@@ -165,7 +185,7 @@ export default function NowPlaying({ onOpenEqualizer }) {
 
       {/* Centered Artwork Container */}
       <div className="now-playing-artwork-container">
-        <div className="now-playing-artwork">
+        <div className={`now-playing-artwork ${isPlaying ? 'is-playing' : ''}`}>
           {coverUrl ? (
             <img
               src={coverUrl}
@@ -182,10 +202,20 @@ export default function NowPlaying({ onOpenEqualizer }) {
 
       {/* Bottom Controls Group (Anchored comfortably to bottom) */}
       <div className="now-playing-bottom">
-        {/* Track Title & Artist */}
-        <div className="now-playing-info">
-          <div className="now-playing-title">{currentSong.title || 'Unknown'}</div>
-          <div className="now-playing-artist">{currentSong.artist || 'Unknown Artist'}</div>
+        {/* Track Title, Artist & Heart Favorite */}
+        <div className="now-playing-title-row">
+          <div className="now-playing-info">
+            <div className="now-playing-title">{currentSong.title || 'Unknown'}</div>
+            <div className="now-playing-artist">{currentSong.artist || 'Unknown Artist'}</div>
+          </div>
+          <button
+            className={`heart-btn ${isLiked ? 'liked' : ''}`}
+            style={{ padding: 10, flexShrink: 0 }}
+            onClick={() => toggleFavorite(currentSong)}
+            title={isLiked ? 'Remove from Favorites' : 'Save to Favorites'}
+          >
+            <IconHeart size={26} filled={isLiked} />
+          </button>
         </div>
 
         {/* Real Visible Progress Bar with Live Scrubbing */}
@@ -236,7 +266,7 @@ export default function NowPlaying({ onOpenEqualizer }) {
         </div>
 
         {/* Secondary Actions */}
-        <div className="extra-controls">
+        <div className="extra-controls" style={{ flexWrap: 'wrap', gap: 14 }}>
           <button className="control-btn btn-icon" onClick={toggleLyrics} title="Lyrics">
             <IconLyrics size={22} />
           </button>
@@ -245,6 +275,35 @@ export default function NowPlaying({ onOpenEqualizer }) {
           </button>
           <button className="control-btn btn-icon" onClick={onOpenEqualizer} title="Equalizer">
             <IconEqualizer size={22} />
+          </button>
+          <button
+            className={`control-btn btn-icon moon-btn ${sleepTimerMinutes ? 'active' : ''} ${isMoonAnimated ? 'animate-pop' : ''}`}
+            onClick={() => {
+              triggerHaptic('light');
+              setIsMoonAnimated(true);
+              setTimeout(() => setIsMoonAnimated(false), 450);
+              toggleSleepTimer();
+            }}
+            title={sleepTimerMinutes ? `Sleep Timer: ${sleepTimerMinutes}m` : 'Sleep Timer'}
+          >
+            <IconMoon size={22} />
+          </button>
+          <button
+            className="control-btn btn-icon"
+            onClick={toggleVisualizer}
+            title="Audio Spectrum Visualizer"
+          >
+            <IconVisualizer size={22} />
+          </button>
+          <button
+            className="control-btn btn-icon"
+            onClick={() => {
+              triggerHaptic('selection');
+              shareSong(currentSong);
+            }}
+            title="Share Song"
+          >
+            <IconShare size={22} />
           </button>
           <button
             className="control-btn btn-icon"

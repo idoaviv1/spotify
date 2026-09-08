@@ -1,12 +1,131 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import usePlayerStore from '../stores/playerStore';
-import { formatDuration, formatRelativeTime } from '../utils/format';
-import { IconMusic, IconHistory, IconChevronRight, IconPlay, IconDownload, IconOffline } from '../components/common/Icons';
+import { formatDuration } from '../utils/format';
+import {
+  IconMusic,
+  IconChevronRight,
+  IconDownload,
+  IconOffline,
+  IconHeart,
+  IconPlay,
+  IconShuffle,
+  IconRefresh,
+  IconSparkles,
+  IconMore,
+} from '../components/common/Icons';
 import { downloadSongEverywhere, isSongOffline } from '../utils/storage';
 
+const CATEGORIES = [
+  { id: 'all', label: 'גלה הכל', flag: '✨' },
+  { id: 'hebrew', label: 'עברית', flag: '🇮🇱' },
+  { id: 'english', label: 'English', flag: '🌍' },
+  { id: 'spanish', label: 'Español', flag: '💃' },
+  { id: 'fresh', label: 'שירים שטרם שמעת', flag: '🔥' },
+];
+
+function getBadgeClass(lang) {
+  switch (lang) {
+    case 'hebrew':
+      return 'badge-hebrew';
+    case 'english':
+      return 'badge-english';
+    case 'spanish':
+      return 'badge-spanish';
+    case 'fresh':
+      return 'badge-fresh';
+    default:
+      return 'badge-fresh';
+  }
+}
+
+// Explore Song Card Component
+function ExploreSongCard({ song, isOff, isDling, onPlay, onDownload, onContextMenu }) {
+  const badgeClass = getBadgeClass(song.category || song.language);
+
+  return (
+    <div
+      className="explore-card"
+      onClick={() => onPlay(song)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(e.clientX, e.clientY, song);
+      }}
+    >
+      <div className="explore-cover-wrapper">
+        {song.thumbnail || song.cover_art_url ? (
+          <img className="explore-cover-img" src={song.thumbnail || song.cover_art_url} alt="" loading="lazy" />
+        ) : (
+          <div className="song-cover-placeholder" style={{ width: '100%', height: '100%', fontSize: '2rem' }}>♪</div>
+        )}
+
+        {/* Category / Language Badge */}
+        {song.badge && (
+          <span className={`explore-badge ${badgeClass}`}>
+            {song.badge}
+          </span>
+        )}
+
+        {/* Offline Download Button */}
+        <button
+          className={`explore-download-btn ${isOff ? 'is-offline' : ''}`}
+          onClick={(e) => onDownload(e, song)}
+          disabled={isDling}
+          title={isOff ? 'שמור לאופליין' : 'הורד לאופליין'}
+        >
+          {isDling ? (
+            <div className="loading-spinner" style={{ width: 14, height: 14 }} />
+          ) : isOff ? (
+            <IconOffline size={16} />
+          ) : (
+            <IconDownload size={16} />
+          )}
+        </button>
+
+        {/* Floating Green Play Button Overlay */}
+        <div className="explore-play-overlay">
+          <IconPlay size={20} />
+        </div>
+      </div>
+
+      <div className="playlist-name" title={song.title} style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+        {song.title}
+      </div>
+      <div className="playlist-meta" title={song.artist} style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+        {song.artist}
+      </div>
+
+      <div className="explore-card-footer">
+        {song.duration > 0 ? (
+          <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
+            {formatDuration(song.duration)}
+          </span>
+        ) : <span />}
+
+        <button
+          className="btn-icon"
+          style={{ width: 26, height: 26, opacity: 0.7 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onContextMenu(e.clientX, e.clientY, song);
+          }}
+          title="אפשרויות נוספות"
+        >
+          <IconMore size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [exploreSections, setExploreSections] = useState([]);
+  const [categoryData, setCategoryData] = useState(null);
+  const [isExploreLoading, setIsExploreLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const [recentSongs, setRecentSongs] = useState([]);
   const [playlists, setPlaylists] = useState([]);
   const [topSongs, setTopSongs] = useState([]);
@@ -17,15 +136,56 @@ export default function HomePage() {
   const [recOfflineMap, setRecOfflineMap] = useState({});
 
   const playSong = usePlayerStore((s) => s.playSong);
+  const playList = usePlayerStore((s) => s.playList);
   const currentSong = usePlayerStore((s) => s.currentSong);
+  const openContextMenu = usePlayerStore((s) => s.openContextMenu);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadData();
+  // Check offline status for a list of songs
+  const updateOfflineStatuses = useCallback(async (songsList) => {
+    if (!songsList || songsList.length === 0) return;
+    try {
+      const entries = await Promise.all(
+        songsList.map(async (s) => {
+          const ytId = s.youtube_id || s.id;
+          return ytId ? [ytId, await isSongOffline(s)] : null;
+        })
+      );
+      const validEntries = entries.filter(Boolean);
+      if (validEntries.length > 0) {
+        setRecOfflineMap((prev) => ({ ...prev, ...Object.fromEntries(validEntries) }));
+      }
+    } catch (err) {
+      console.warn('Failed to check offline status:', err);
+    }
   }, []);
 
-  async function loadData() {
-    setIsLoading(true);
+  // Fetch Explore data for category
+  const loadExploreData = useCallback(async (category, refresh = false) => {
+    setIsExploreLoading(true);
+    try {
+      const data = await api.getExploreRecommendations(category, refresh, 12);
+      if (category === 'all') {
+        const sections = data.sections || [];
+        setExploreSections(sections);
+        setCategoryData(null);
+        // Gather all songs from all sections to check offline
+        const allSongs = sections.flatMap((sec) => sec.songs || []);
+        updateOfflineStatuses(allSongs);
+      } else {
+        setCategoryData(data);
+        updateOfflineStatuses(data.songs || []);
+      }
+    } catch (err) {
+      console.error('Failed to load explore recommendations:', err);
+    } finally {
+      setIsExploreLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [updateOfflineStatuses]);
+
+  // Initial user library data
+  const loadBaseData = useCallback(async () => {
     try {
       await api.healthCheck();
       setServerOnline(true);
@@ -41,81 +201,181 @@ export default function HomePage() {
 
       const recs = recData.recommendations || [];
       setRecommendations(recs);
-
-      // Check offline status for recommendations
-      const offMap = {};
-      for (const r of recs) {
-        offMap[r.youtube_id] = await isSongOffline(r);
-      }
-      setRecOfflineMap(offMap);
+      updateOfflineStatuses(recs);
     } catch {
       setServerOnline(false);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  }
+  }, [updateOfflineStatuses]);
 
-  const handleDownloadRec = async (e, rec) => {
+  useEffect(() => {
+    loadBaseData();
+    loadExploreData('all');
+  }, [loadBaseData, loadExploreData]);
+
+  // Handle category tab change
+  const handleSelectCategory = (catId) => {
+    setSelectedCategory(catId);
+    loadExploreData(catId);
+  };
+
+  // Handle refresh button
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    loadExploreData(selectedCategory, true);
+  };
+
+  const handleDownloadSong = async (e, song) => {
     e.stopPropagation();
-    setDownloadingRec(prev => ({ ...prev, [rec.youtube_id]: true }));
+    const ytId = song.youtube_id || song.id;
+    if (!ytId) return;
+
+    setDownloadingRec((prev) => ({ ...prev, [ytId]: true }));
     try {
-      await downloadSongEverywhere(rec);
-      setRecOfflineMap(prev => ({ ...prev, [rec.youtube_id]: true }));
+      await downloadSongEverywhere(song);
+      setRecOfflineMap((prev) => ({ ...prev, [ytId]: true }));
     } catch (err) {
-      console.error('Failed to download recommendation:', err);
+      console.error('Failed to download song:', err);
     }
-    setDownloadingRec(prev => ({ ...prev, [rec.youtube_id]: false }));
+    setDownloadingRec((prev) => ({ ...prev, [ytId]: false }));
+  };
+
+  const handlePlaySong = (song) => {
+    playSong({
+      title: song.title,
+      artist: song.artist,
+      youtube_url: song.youtube_url || (song.youtube_id ? `https://www.youtube.com/watch?v=${song.youtube_id}` : null),
+      youtube_id: song.youtube_id,
+      duration: song.duration,
+      cover_art_url: song.thumbnail || song.cover_art_url,
+      thumbnail: song.thumbnail || song.cover_art_url,
+    });
+  };
+
+  // Play all songs in the current category
+  const handlePlayAllCategory = (songsToPlay, shuffle = false) => {
+    if (!songsToPlay || songsToPlay.length === 0) return;
+    let list = songsToPlay.map((s) => ({
+      title: s.title,
+      artist: s.artist,
+      youtube_url: s.youtube_url || (s.youtube_id ? `https://www.youtube.com/watch?v=${s.youtube_id}` : null),
+      youtube_id: s.youtube_id,
+      duration: s.duration,
+      cover_art_url: s.thumbnail || s.cover_art_url,
+      thumbnail: s.thumbnail || s.cover_art_url,
+    }));
+    if (shuffle) {
+      list = [...list].sort(() => Math.random() - 0.5);
+    }
+    playList(list, 0);
   };
 
   const greeting = (() => {
     const h = new Date().getHours();
-    if (h < 12) return 'Good Morning';
-    if (h < 18) return 'Good Afternoon';
-    return 'Good Evening';
+    if (h < 12) return 'בוקר טוב';
+    if (h < 18) return 'צהריים טובים';
+    return 'ערב טוב';
   })();
 
   return (
     <div className="page">
-      <div className="page-header">
-        <h1 className="text-display">{greeting} 🎵</h1>
+      {/* Header with Greeting & Subtitle */}
+      <div className="page-header" style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div>
+            <h1 className="text-display" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {greeting} 🎵
+            </h1>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+              גלה מוזיקה חדשה ושירים שלא שמעת מעולם בעברית, באנגלית ובספרדית
+            </p>
+          </div>
+        </div>
+
         {!serverOnline && (
-          <div style={{
-            marginTop: 12, padding: '10px 16px',
-            background: 'rgba(231, 76, 60, 0.15)',
-            border: '1px solid rgba(231, 76, 60, 0.3)',
-            borderRadius: 'var(--radius-md)',
-            fontSize: '0.8125rem', color: '#e74c3c'
-          }}>
+          <div
+            style={{
+              marginTop: 12,
+              padding: '10px 16px',
+              background: 'rgba(231, 76, 60, 0.15)',
+              border: '1px solid rgba(231, 76, 60, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: '0.8125rem',
+              color: '#e74c3c',
+            }}
+          >
             ⚠️ Server offline. Check Tailscale connection.
           </div>
         )}
       </div>
 
+      {/* Explore Navigation Bar (Pills + Refresh Button) */}
+      <div className="explore-nav-bar">
+        <div className="explore-pills">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.id}
+              className={`explore-pill ${selectedCategory === cat.id ? 'active' : ''}`}
+              onClick={() => handleSelectCategory(cat.id)}
+            >
+              <span>{cat.flag}</span>
+              <span>{cat.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <button
+          className={`explore-refresh-btn ${isRefreshing ? 'is-refreshing' : ''}`}
+          onClick={handleRefresh}
+          disabled={isRefreshing || isExploreLoading}
+          title="רענן המלצות ושלוף שירים חדשים"
+        >
+          <IconRefresh size={14} />
+          <span>רענן שירים</span>
+        </button>
+      </div>
+
+      {/* Loading Skeleton */}
       {isLoading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="song-item">
-              <div className="skeleton skeleton-cover" />
-              <div className="song-info" style={{ gap: 6 }}>
-                <div className="skeleton skeleton-text" style={{ width: `${60 + Math.random() * 30}%` }} />
-                <div className="skeleton skeleton-text-sm" />
+          {[1, 2, 3, 4].map((i) => {
+            const widthPct = 55 + ((i * 17) % 35);
+            return (
+              <div key={i} className="song-item">
+                <div className="skeleton skeleton-cover" />
+                <div className="song-info" style={{ gap: 6 }}>
+                  <div className="skeleton skeleton-text" style={{ width: `${widthPct}%` }} />
+                  <div className="skeleton skeleton-text-sm" />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <>
           {/* Continue Playing */}
           {currentSong && (
-            <div className="section">
+            <div className="section" style={{ marginBottom: 28 }}>
               <div className="section-header">
                 <h2 className="section-title">Continue Playing</h2>
               </div>
-              <div className="glass-card" style={{
-                display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer'
-              }} onClick={() => usePlayerStore.getState().setNowPlayingOpen(true)}>
-                {(currentSong.cover_art_url || currentSong.thumbnail) ? (
-                  <img src={currentSong.cover_art_url || currentSong.thumbnail} alt=""
-                    style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover' }} />
+              <div
+                className="glass-card"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  cursor: 'pointer',
+                }}
+                onClick={() => usePlayerStore.getState().setNowPlayingOpen(true)}
+              >
+                {currentSong.cover_art_url || currentSong.thumbnail ? (
+                  <img
+                    src={currentSong.cover_art_url || currentSong.thumbnail}
+                    alt=""
+                    style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover' }}
+                  />
                 ) : (
                   <div className="song-cover-placeholder" style={{ width: 64, height: 64, fontSize: '1.5rem' }}>♪</div>
                 )}
@@ -124,182 +384,326 @@ export default function HomePage() {
                   <div className="song-artist">{currentSong.artist}</div>
                 </div>
                 <div className="playing-bars">
-                  <div className="playing-bar" /><div className="playing-bar" /><div className="playing-bar" /><div className="playing-bar" />
+                  <div className="playing-bar" />
+                  <div className="playing-bar" />
+                  <div className="playing-bar" />
+                  <div className="playing-bar" />
                 </div>
               </div>
             </div>
           )}
 
-          {/* Smart Recommendations based on History */}
-          {recommendations.length > 0 && (
+          {/* ═════════ CATEGORY VIEW (hebrew / english / spanish / fresh) ═════════ */}
+          {selectedCategory !== 'all' && (
             <div className="section">
-              <div className="section-header">
-                <h2 className="section-title">✨ Recommended for You</h2>
-              </div>
-              <div className="horizontal-scroll">
-                {recommendations.map((rec) => {
-                  const isOff = recOfflineMap[rec.youtube_id];
-                  const isDling = downloadingRec[rec.youtube_id];
+              {categoryData && (
+                <div className="explore-category-hero">
+                  <div>
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {categoryData.title}
+                    </h2>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: 4 }}>
+                      {categoryData.subtitle}
+                    </p>
+                  </div>
+
+                  {categoryData.songs && categoryData.songs.length > 0 && (
+                    <div className="explore-category-actions">
+                      <button
+                        className="btn btn-primary"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                        onClick={() => handlePlayAllCategory(categoryData.songs, false)}
+                      >
+                        <IconPlay size={18} />
+                        <span>נגן הכל</span>
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                        onClick={() => handlePlayAllCategory(categoryData.songs, true)}
+                      >
+                        <IconShuffle size={18} />
+                        <span>ערבב ונגן</span>
+                      </button>
+                      <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginInlineStart: 'auto' }}>
+                        {categoryData.songs.length} שירים לגלות
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {isExploreLoading ? (
+                <div className="explore-grid">
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                    <div key={i} className="explore-card" style={{ opacity: 0.6 }}>
+                      <div className="skeleton skeleton-cover" style={{ width: '100%', aspectRatio: '1', borderRadius: 8, marginBottom: 8 }} />
+                      <div className="skeleton skeleton-text" style={{ width: '80%', height: 14 }} />
+                      <div className="skeleton skeleton-text-sm" style={{ width: '50%', height: 12, marginTop: 4 }} />
+                    </div>
+                  ))}
+                </div>
+              ) : categoryData?.songs?.length > 0 ? (
+                <div className="explore-grid">
+                  {categoryData.songs.map((song) => {
+                    const ytId = song.youtube_id || song.id;
+                    const isOff = recOfflineMap[ytId];
+                    const isDling = downloadingRec[ytId];
+
+                    return (
+                      <ExploreSongCard
+                        key={ytId}
+                        song={song}
+                        isOff={isOff}
+                        isDling={isDling}
+                        onPlay={handlePlaySong}
+                        onDownload={handleDownloadSong}
+                        onContextMenu={openContextMenu}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <IconMusic size={48} />
+                  <p style={{ marginTop: 12 }}>לא נמצאו שירים כעת. נסה ללחוץ על &apos;רענן שירים&apos;</p>
+                  <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={handleRefresh}>
+                    רענן המלצות
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ═════════ ALL VIEW: DISCOVERY CAROUSELS PER LANGUAGE ═════════ */}
+          {selectedCategory === 'all' && (
+            <>
+              {isExploreLoading && exploreSections.length === 0 ? (
+                <div className="section">
+                  <div className="skeleton skeleton-text" style={{ width: '40%', height: 22, marginBottom: 16 }} />
+                  <div className="horizontal-scroll">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div key={i} className="explore-card" style={{ opacity: 0.6 }}>
+                        <div className="skeleton skeleton-cover" style={{ width: '100%', aspectRatio: '1', borderRadius: 8, marginBottom: 8 }} />
+                        <div className="skeleton skeleton-text" style={{ width: '80%', height: 14 }} />
+                        <div className="skeleton skeleton-text-sm" style={{ width: '50%', height: 12, marginTop: 4 }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                exploreSections.map((sec) => {
+                  if (!sec.songs || sec.songs.length === 0) return null;
 
                   return (
-                    <div
-                      key={rec.youtube_id}
-                      className="playlist-card"
-                      style={{ width: 'clamp(145px, 40vw, 180px)', cursor: 'pointer' }}
-                      onClick={() => playSong({
-                        title: rec.title,
-                        artist: rec.artist,
-                        youtube_url: rec.youtube_url,
-                        youtube_id: rec.youtube_id,
-                        duration: rec.duration,
-                        cover_art_url: rec.thumbnail,
-                        thumbnail: rec.thumbnail,
-                      })}
-                    >
-                      <div className="playlist-cover" style={{ position: 'relative' }}>
-                        {rec.thumbnail ? (
-                          <img src={rec.thumbnail} alt="" />
-                        ) : (
-                          <IconMusic size={40} style={{ color: 'var(--accent)', opacity: 0.6 }} />
-                        )}
+                    <div key={sec.id} className="section" style={{ marginBottom: 32 }}>
+                      <div className="section-header" style={{ alignItems: 'flex-end' }}>
+                        <div>
+                          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {sec.title}
+                          </h2>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                            {sec.subtitle}
+                          </div>
+                        </div>
                         <button
-                          className="btn-icon"
-                          style={{
-                            position: 'absolute',
-                            right: 8,
-                            top: 8,
-                            width: 32,
-                            height: 32,
-                            background: 'rgba(0,0,0,0.6)',
-                            backdropFilter: 'blur(4px)',
-                            color: isOff ? '#10b981' : '#ffffff',
-                          }}
-                          onClick={(e) => handleDownloadRec(e, rec)}
-                          disabled={isDling}
-                          title={isOff ? "Saved Offline" : "Save Offline"}
+                          className="section-link"
+                          onClick={() => handleSelectCategory(sec.id)}
+                          style={{ cursor: 'pointer' }}
                         >
-                          {isDling ? (
-                            <div className="loading-spinner" style={{ width: 14, height: 14 }} />
-                          ) : isOff ? (
-                            <IconOffline size={16} />
-                          ) : (
-                            <IconDownload size={16} />
-                          )}
+                          הצג הכל <IconChevronRight size={14} />
                         </button>
                       </div>
-                      <div className="playlist-name" style={{ fontSize: '0.875rem' }}>{rec.title}</div>
-                      <div className="playlist-meta" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                        {rec.artist}
+
+                      <div className="horizontal-scroll">
+                        {sec.songs.map((song) => {
+                          const ytId = song.youtube_id || song.id;
+                          const isOff = recOfflineMap[ytId];
+                          const isDling = downloadingRec[ytId];
+
+                          return (
+                            <ExploreSongCard
+                              key={ytId}
+                              song={song}
+                              isOff={isOff}
+                              isDling={isDling}
+                              onPlay={handlePlaySong}
+                              onDownload={handleDownloadSong}
+                              onContextMenu={openContextMenu}
+                            />
+                          );
+                        })}
                       </div>
-                      {rec.reason && (
-                        <div style={{
-                          fontSize: '0.6875rem',
-                          color: 'var(--accent)',
-                          marginTop: 4,
-                          fontWeight: 600,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}>
-                          {rec.reason}
-                        </div>
-                      )}
                     </div>
                   );
-                })}
-              </div>
-            </div>
-          )}
+                })
+              )}
 
-          {/* Playlists */}
-          {playlists.length > 0 && (
-            <div className="section">
-              <div className="section-header">
-                <h2 className="section-title">Your Playlists</h2>
-                <button className="section-link" onClick={() => navigate('/library')}>See all <IconChevronRight size={14} /></button>
-              </div>
-              <div className="horizontal-scroll">
-                {playlists.map(pl => (
-                  <div key={pl.id} className="playlist-card" onClick={() => navigate(`/playlist/${pl.id}`)}>
-                    <div className="playlist-cover">
-                      {pl.cover_image ? (
-                        <img src={pl.cover_image} alt={pl.name} />
-                      ) : (
-                        <IconMusic size={40} style={{ color: 'var(--accent)', opacity: 0.6 }} />
-                      )}
+              {/* Smart Recommendations based on History */}
+              {recommendations.length > 0 && (
+                <div className="section" style={{ marginBottom: 32 }}>
+                  <div className="section-header">
+                    <div>
+                      <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <IconSparkles size={20} style={{ color: 'var(--accent)' }} />
+                        מומלץ עבורך (מבוסס על האזנות קודמות)
+                      </h2>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                        שירים ואמנים דומים לאלו שהאזנת להם
+                      </div>
                     </div>
-                    <div className="playlist-name">{pl.name}</div>
-                    <div className="playlist-meta">{pl.song_count} songs</div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {/* Recently Added */}
-          {recentSongs.length > 0 && (
-            <div className="section">
-              <div className="section-header">
-                <h2 className="section-title">Recently Added</h2>
-                <button className="section-link" onClick={() => navigate('/library')}>See all</button>
-              </div>
-              {recentSongs.slice(0, 6).map(song => (
-                <div key={song.id} className={`song-item ${currentSong?.id === song.id ? 'active' : ''}`}
-                  onClick={() => playSong(song)}>
-                  {song.cover_art_url ? (
-                    <img className="song-cover" src={song.cover_art_url} alt="" />
-                  ) : (
-                    <div className="song-cover-placeholder">♪</div>
-                  )}
-                  <div className="song-info">
-                    <span className="song-title">{song.title}</span>
-                    <span className="song-artist">{song.artist}</span>
-                  </div>
-                  <span className="song-duration">{formatDuration(song.duration)}</span>
-                </div>
-              ))}
-            </div>
-          )}
+                  <div className="horizontal-scroll">
+                    {recommendations.map((rec) => {
+                      const ytId = rec.youtube_id || rec.id;
+                      const isOff = recOfflineMap[ytId];
+                      const isDling = downloadingRec[ytId];
 
-          {/* Most Played */}
-          {topSongs.length > 0 && (
-            <div className="section">
-              <div className="section-header">
-                <h2 className="section-title">Most Played</h2>
-              </div>
-              {topSongs.slice(0, 5).map((song, idx) => (
-                <div key={song.id} className={`song-item ${currentSong?.id === song.id ? 'active' : ''}`}
-                  onClick={() => playSong(song)}>
-                  <span style={{
-                    width: 28, textAlign: 'center', fontWeight: 700,
-                    color: idx < 3 ? 'var(--accent)' : 'var(--text-tertiary)',
-                    fontSize: '1rem',
-                  }}>{idx + 1}</span>
-                  {song.cover_art_url ? (
-                    <img className="song-cover" src={song.cover_art_url} alt="" />
-                  ) : (
-                    <div className="song-cover-placeholder">♪</div>
-                  )}
-                  <div className="song-info">
-                    <span className="song-title">{song.title}</span>
-                    <span className="song-artist">{song.artist}</span>
+                      return (
+                        <ExploreSongCard
+                          key={ytId}
+                          song={{ ...rec, badge: 'המלצה אישית', category: 'fresh' }}
+                          isOff={isOff}
+                          isDling={isDling}
+                          onPlay={handlePlaySong}
+                          onDownload={handleDownloadSong}
+                          onContextMenu={openContextMenu}
+                        />
+                      );
+                    })}
                   </div>
-                  <span className="song-duration" style={{ color: 'var(--text-tertiary)' }}>
-                    {song.play_count}×
-                  </span>
                 </div>
-              ))}
-            </div>
+              )}
+
+              {/* Playlists */}
+              {playlists.length > 0 && (
+                <div className="section" style={{ marginBottom: 32 }}>
+                  <div className="section-header">
+                    <h2 className="section-title">הפלייליסטים שלך</h2>
+                    <button className="section-link" onClick={() => navigate('/library')}>
+                      See all <IconChevronRight size={14} />
+                    </button>
+                  </div>
+                  <div className="horizontal-scroll">
+                    {playlists.map((pl) => (
+                      <div key={pl.id} className="playlist-card" onClick={() => navigate(`/playlist/${pl.id}`)}>
+                        <div className="playlist-cover">
+                          {pl.id === 'favorites' ? (
+                            <div
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                background: 'linear-gradient(135deg, #4f46e5 0%, #10b981 100%)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <IconHeart size={36} filled={true} style={{ color: '#fff' }} />
+                            </div>
+                          ) : pl.cover_image ? (
+                            <img src={pl.cover_image} alt={pl.name} />
+                          ) : (
+                            <IconMusic size={40} style={{ color: 'var(--accent)', opacity: 0.6 }} />
+                          )}
+                        </div>
+                        <div className="playlist-name">{pl.name}</div>
+                        <div className="playlist-meta">{pl.song_count} songs</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recently Added */}
+              {recentSongs.length > 0 && (
+                <div className="section" style={{ marginBottom: 32 }}>
+                  <div className="section-header">
+                    <h2 className="section-title">נוספו לאחרונה</h2>
+                    <button className="section-link" onClick={() => navigate('/library')}>
+                      See all <IconChevronRight size={14} />
+                    </button>
+                  </div>
+                  {recentSongs.slice(0, 6).map((song) => (
+                    <div
+                      key={song.id}
+                      className={`song-item ${currentSong?.id === song.id ? 'active' : ''}`}
+                      onClick={() => playSong(song)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openContextMenu(e.clientX, e.clientY, song);
+                      }}
+                    >
+                      {song.cover_art_url ? (
+                        <img className="song-cover" src={song.cover_art_url} alt="" />
+                      ) : (
+                        <div className="song-cover-placeholder">♪</div>
+                      )}
+                      <div className="song-info">
+                        <span className="song-title">{song.title}</span>
+                        <span className="song-artist">{song.artist}</span>
+                      </div>
+                      <span className="song-duration">{formatDuration(song.duration)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Most Played */}
+              {topSongs.length > 0 && (
+                <div className="section" style={{ marginBottom: 32 }}>
+                  <div className="section-header">
+                    <h2 className="section-title">הכי מושמעים</h2>
+                  </div>
+                  {topSongs.slice(0, 5).map((song, idx) => (
+                    <div
+                      key={song.id}
+                      className={`song-item ${currentSong?.id === song.id ? 'active' : ''}`}
+                      onClick={() => playSong(song)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openContextMenu(e.clientX, e.clientY, song);
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 28,
+                          textAlign: 'center',
+                          fontWeight: 700,
+                          color: idx < 3 ? 'var(--accent)' : 'var(--text-tertiary)',
+                          fontSize: '1rem',
+                        }}
+                      >
+                        {idx + 1}
+                      </span>
+                      {song.cover_art_url ? (
+                        <img className="song-cover" src={song.cover_art_url} alt="" />
+                      ) : (
+                        <div className="song-cover-placeholder">♪</div>
+                      )}
+                      <div className="song-info">
+                        <span className="song-title">{song.title}</span>
+                        <span className="song-artist">{song.artist}</span>
+                      </div>
+                      <span className="song-duration" style={{ color: 'var(--text-tertiary)' }}>
+                        {song.play_count}×
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           {/* Empty state */}
-          {recentSongs.length === 0 && playlists.length === 0 && (
+          {recentSongs.length === 0 && playlists.length === 0 && exploreSections.length === 0 && (
             <div className="empty-state">
               <IconMusic size={64} />
-              <h3 style={{ marginBottom: 8, color: 'var(--text-secondary)' }}>Your library is empty</h3>
-              <p>Search for music to start building your collection!</p>
+              <h3 style={{ marginBottom: 8, color: 'var(--text-secondary)' }}>הספרייה שלך ריקה</h3>
+              <p>חפש שירים או בחר אחת מקטגוריות ה-Explore למעלה כדי להתחיל להאזין!</p>
               <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={() => navigate('/search')}>
-                Search Music
+                חיפוש מוזיקה
               </button>
             </div>
           )}

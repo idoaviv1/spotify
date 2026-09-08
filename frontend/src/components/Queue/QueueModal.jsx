@@ -2,11 +2,9 @@ import usePlayerStore from '../../stores/playerStore';
 import { formatDuration } from '../../utils/format';
 import {
   IconClose,
-  IconDelete,
-  IconPlay,
   IconQueue,
-  IconMusic,
 } from '../common/Icons';
+import useDragToClose from '../../hooks/useDragToClose';
 
 export default function QueueModal() {
   const {
@@ -18,16 +16,36 @@ export default function QueueModal() {
     playSong,
     removeFromQueue,
     clearQueue,
+    autoplay,
+    toggleAutoplay,
   } = usePlayerStore();
+
+  const {
+    modalContentRef,
+    overlayRef,
+    isDragging: isModalDragging,
+    handleDragStartProps: modalDragProps,
+  } = useDragToClose({ onClose: toggleQueue, threshold: 80 });
 
   if (!isQueueOpen) return null;
 
   const upNext = queue.slice(queueIndex + 1);
 
   return (
-    <div className="modal-overlay" onClick={toggleQueue}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-handle" />
+    <div className="modal-overlay" ref={overlayRef} onClick={toggleQueue}>
+      <div
+        ref={modalContentRef}
+        className="modal-content"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top Handle Bar - click and drag down to dismiss */}
+        <div
+          className={`modal-handle-bar ${isModalDragging ? 'is-dragging' : ''}`}
+          {...modalDragProps}
+          title="גרור למטה לסגירה"
+        >
+          <div className="modal-handle" />
+        </div>
 
         {/* Header */}
         <div
@@ -36,6 +54,15 @@ export default function QueueModal() {
             alignItems: 'center',
             justifyContent: 'space-between',
             marginBottom: 'var(--space-lg)',
+            cursor: isModalDragging ? 'grabbing' : 'default',
+          }}
+          onMouseDown={(e) => {
+            if (e.target.closest('button') || e.target.closest('input')) return;
+            modalDragProps.onMouseDown(e);
+          }}
+          onTouchStart={(e) => {
+            if (e.target.closest('button') || e.target.closest('input')) return;
+            modalDragProps.onTouchStart(e);
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -43,7 +70,29 @@ export default function QueueModal() {
             <h2 className="text-heading">Playback Queue</h2>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'rgba(255, 255, 255, 0.05)',
+                padding: '3px 8px',
+                borderRadius: 20,
+                border: '1px solid var(--glass-border)',
+              }}
+              title={autoplay ? 'Autoplay פעיל: שירים דומים מושמעים ברצף ללא הפסקה' : 'Autoplay כבוי'}
+            >
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                Autoplay
+              </span>
+              <button
+                className={`toggle ${autoplay ? 'on' : ''}`}
+                onClick={toggleAutoplay}
+                style={{ transform: 'scale(0.72)' }}
+              />
+            </div>
+
             {queue.length > 0 && (
               <button
                 className="btn btn-ghost"
@@ -152,8 +201,31 @@ export default function QueueModal() {
                     )}
 
                     <div className="song-info">
-                      <div className="song-title">{song.title}</div>
-                      <div className="song-artist">{song.artist}</div>
+                      <div className="song-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{song.title}</span>
+                        {song.isAutoplay && (
+                          <span
+                            style={{
+                              fontSize: '0.625rem',
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              background: 'rgba(30, 215, 96, 0.15)',
+                              color: 'var(--accent)',
+                              fontWeight: 600,
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
+                            }}
+                          >
+                            שיר דומה
+                          </span>
+                        )}
+                      </div>
+                      <div className="song-artist" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{song.artist}</span>
+                        {song.reason && (
+                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>• {song.reason}</span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="song-duration">{formatDuration(song.duration)}</div>

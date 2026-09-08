@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import usePlayerStore from '../stores/playerStore';
 import { formatDuration, formatFileSize } from '../utils/format';
-import { IconMusic, IconPlus, IconSearch, IconDelete, IconPlay, IconDownload, IconOffline } from '../components/common/Icons';
+import { IconMusic, IconPlus, IconSearch, IconDelete, IconPlay, IconDownload, IconOffline, IconHeart } from '../components/common/Icons';
 import { isSongOffline, downloadSongEverywhere, getAllOfflineSongs, removeOfflineAudio, getOfflineStorageSize } from '../utils/storage';
 
 export default function LibraryPage() {
@@ -23,14 +23,13 @@ export default function LibraryPage() {
   const playSong = usePlayerStore((s) => s.playSong);
   const playList = usePlayerStore((s) => s.playList);
   const currentSong = usePlayerStore((s) => s.currentSong);
+  const openContextMenu = usePlayerStore((s) => s.openContextMenu);
+  const isFavorite = usePlayerStore((s) => s.isFavorite);
+  const toggleFavorite = usePlayerStore((s) => s.toggleFavorite);
+  const favoriteIds = usePlayerStore((s) => s.favoriteIds);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
-    setIsLoading(true);
+  const loadData = useCallback(async (isMountedRef) => {
     let serverSongs = [];
     try {
       const [libData, playlistData, statsData] = await Promise.all([
@@ -38,6 +37,7 @@ export default function LibraryPage() {
         api.getPlaylists().catch(() => ({ playlists: [] })),
         api.getLibraryStats().catch(() => null),
       ]);
+      if (isMountedRef && !isMountedRef()) return;
       serverSongs = libData.songs || [];
       setSongs(serverSongs);
       setPlaylists(playlistData.playlists || []);
@@ -49,31 +49,51 @@ export default function LibraryPage() {
     // Load local offline storage
     try {
       const localCached = await getAllOfflineSongs();
+      if (isMountedRef && !isMountedRef()) return;
       setOfflineList(localCached || []);
       const bytes = await getOfflineStorageSize();
+      if (isMountedRef && !isMountedRef()) return;
       setOfflineBytes(bytes);
 
       const statusMap = {};
-      for (const item of localCached) {
+      for (const item of (localCached || [])) {
         statusMap[item.songId || item.id] = true;
       }
-      for (const s of serverSongs) {
-        if (!statusMap[s.id]) {
-          statusMap[s.id] = await isSongOffline(s.id);
+
+      // Check remaining server songs concurrently
+      const unverified = serverSongs.filter(s => s.id && !statusMap[s.id]);
+      if (unverified.length > 0) {
+        const results = await Promise.all(
+          unverified.map(async s => [s.id, await isSongOffline(s)])
+        );
+        if (isMountedRef && !isMountedRef()) return;
+        for (const [id, isOff] of results) {
+          statusMap[id] = isOff;
         }
       }
+
       setOfflineSongs(statusMap);
 
       // If server returned no songs or is offline, switch to Offline tab automatically
-      if (serverSongs.length === 0 && localCached.length > 0) {
+      if (serverSongs.length === 0 && localCached && localCached.length > 0) {
         setTab('offline');
       }
     } catch (err) {
       console.error('Offline storage load error:', err);
+    } finally {
+      if (!isMountedRef || isMountedRef()) {
+        setIsLoading(false);
+      }
     }
+  }, []);
 
-    setIsLoading(false);
-  }
+  useEffect(() => {
+    let mounted = true;
+    loadData(() => mounted);
+    return () => {
+      mounted = false;
+    };
+  }, [loadData]);
 
   const filteredSongs = (tab === 'offline' ? offlineList : songs).filter(s =>
     !searchQuery ||
@@ -148,6 +168,51 @@ export default function LibraryPage() {
         )}
       </div>
 
+      {/* Liked Songs Featured Pinned Banner */}
+      <div
+        className="glass-card liked-songs-banner"
+        onClick={() => navigate('/playlist/favorites')}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          padding: '14px 18px',
+          marginBottom: 18,
+          borderRadius: 'var(--radius-lg)',
+          background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.2) 0%, rgba(16, 185, 129, 0.15) 100%)',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          cursor: 'pointer',
+          transition: 'all var(--transition-fast)',
+        }}
+      >
+        <div
+          style={{
+            width: 50,
+            height: 50,
+            borderRadius: 'var(--radius-md)',
+            background: 'linear-gradient(135deg, #4f46e5 0%, #10b981 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+            flexShrink: 0,
+          }}
+        >
+          <IconHeart size={26} filled={true} style={{ color: '#fff' }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+            Liked Songs · שירים שאהבתי 💚
+          </div>
+          <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+            {favoriteIds.size} {favoriteIds.size === 1 ? 'favorite track' : 'favorite tracks'}
+          </div>
+        </div>
+        <div style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.875rem' }}>
+          Open ›
+        </div>
+      </div>
+
       {/* Tabs */}
       <div className="tabs">
         <button className={`tab ${tab === 'songs' ? 'active' : ''}`} onClick={() => setTab('songs')}>
@@ -187,15 +252,18 @@ export default function LibraryPage() {
 
           {isLoading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="song-item">
-                  <div className="skeleton skeleton-cover" />
-                  <div className="song-info" style={{ gap: 6 }}>
-                    <div className="skeleton skeleton-text" style={{ width: `${50 + Math.random() * 40}%` }} />
-                    <div className="skeleton skeleton-text-sm" />
+              {[1, 2, 3, 4, 5].map((i) => {
+                const widthPct = 50 + ((i * 19) % 40);
+                return (
+                  <div key={i} className="song-item">
+                    <div className="skeleton skeleton-cover" />
+                    <div className="song-info" style={{ gap: 6 }}>
+                      <div className="skeleton skeleton-text" style={{ width: `${widthPct}%` }} />
+                      <div className="skeleton skeleton-text-sm" />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : filteredSongs.length > 0 ? (
             filteredSongs.map((song) => {
@@ -208,6 +276,10 @@ export default function LibraryPage() {
                   key={id || song.title}
                   className={`song-item ${isCurr ? 'active' : ''}`}
                   onClick={() => playSong({ ...song, id, is_downloaded: true })}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    openContextMenu(e.clientX, e.clientY, { ...song, id, is_downloaded: true });
+                  }}
                 >
                   {song.cover_art_url || song.thumbnail ? (
                     <img className="song-cover" src={song.cover_art_url || song.thumbnail} alt="" />
@@ -223,7 +295,18 @@ export default function LibraryPage() {
                     </div>
                     <span className="song-artist">{song.artist}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      className={`heart-btn ${isFavorite(id) ? 'liked' : ''}`}
+                      style={{ padding: 6 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(song);
+                      }}
+                      title={isFavorite(id) ? 'Remove from Favorites' : 'Save to Favorites'}
+                    >
+                      <IconHeart size={16} filled={isFavorite(id)} />
+                    </button>
                     <span className="song-duration">{formatDuration(song.duration)}</span>
                     {!isOff && (
                       <button
@@ -315,12 +398,30 @@ export default function LibraryPage() {
           {playlists.length > 0 ? (
             playlists.map((pl) => (
               <div key={pl.id} className="song-item" onClick={() => navigate(`/playlist/${pl.id}`)}>
-                <div
-                  className="playlist-cover"
-                  style={{ width: 48, height: 48, minWidth: 48, borderRadius: 'var(--radius-sm)' }}
-                >
-                  <IconMusic size={20} style={{ color: 'var(--accent)', opacity: 0.6 }} />
-                </div>
+                {pl.id === 'favorites' ? (
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      minWidth: 48,
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'linear-gradient(135deg, #4f46e5 0%, #10b981 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 10px rgba(16, 185, 129, 0.35)',
+                    }}
+                  >
+                    <IconHeart size={22} filled={true} style={{ color: '#fff' }} />
+                  </div>
+                ) : (
+                  <div
+                    className="playlist-cover"
+                    style={{ width: 48, height: 48, minWidth: 48, borderRadius: 'var(--radius-sm)' }}
+                  >
+                    <IconMusic size={20} style={{ color: 'var(--accent)', opacity: 0.6 }} />
+                  </div>
+                )}
                 <div className="song-info">
                   <span className="song-title">{pl.name}</span>
                   <span className="song-artist">{pl.song_count} songs</span>

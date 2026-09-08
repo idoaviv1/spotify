@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Codemagic build monitor and IPA downloader for SonicLink."""
+"""Codemagic build monitor and IPA downloader for Homeify."""
 import sys
 import time
 import json
@@ -13,7 +13,7 @@ DEST_DIR.mkdir(parents=True, exist_ok=True)
 
 headers = {
     "x-auth-token": API_TOKEN,
-    "User-Agent": "SonicLinkBuilder/1.0"
+    "User-Agent": "HomeifyBuilder/1.0"
 }
 
 print(f"📡 Monitoring Codemagic build: {BUILD_ID}...")

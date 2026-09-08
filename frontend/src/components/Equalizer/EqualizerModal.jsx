@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import usePlayerStore from '../../stores/playerStore';
 import api from '../../api/client';
-import { IconClose, IconEqualizer } from '../common/Icons';
+import { IconClose, IconEqualizer, IconChevronLeft, IconChevronRight } from '../common/Icons';
+import useDragToClose from '../../hooks/useDragToClose';
 
 const FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 const FREQ_LABELS = ['32', '64', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
@@ -27,6 +28,20 @@ export default function EqualizerModal({ isOpen, onClose }) {
   const audioContextRef = useRef(null);
   const filtersRef = useRef([]);
   const sourceConnectedRef = useRef(false);
+
+  // Presets drag and wheel scroll refs & state
+  const presetsRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const scrollLeftStartRef = useRef(0);
+  const hasDraggedRef = useRef(false);
+  const lastXRef = useRef(0);
+  const lastTimeRef = useRef(0);
+  const velocityRef = useRef(0);
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   // Load presets from backend if available
   useEffect(() => {
@@ -132,20 +147,168 @@ export default function EqualizerModal({ isOpen, onClose }) {
     }
   };
 
+  // Helper to check if preset row can scroll left/right
+  const updateScrollIndicators = () => {
+    const el = presetsRef.current;
+    if (!el) return;
+    const tolerance = 2;
+    setCanScrollLeft(el.scrollLeft > tolerance);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - tolerance);
+  };
+
+  const scrollByAmount = (amount) => {
+    const el = presetsRef.current;
+    if (!el) return;
+    el.scrollBy({ left: amount, behavior: 'smooth' });
+  };
+
+  // Wheel horizontal scrolling on presets
+  useEffect(() => {
+    if (!isOpen) return;
+    const el = presetsRef.current;
+    if (!el) return;
+
+    const handleWheel = (e) => {
+      // Support vertical wheel and horizontal scroll gestures
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (delta !== 0) {
+        e.preventDefault();
+        el.scrollLeft += delta;
+        updateScrollIndicators();
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    el.addEventListener('scroll', updateScrollIndicators, { passive: true });
+
+    const timeout = setTimeout(updateScrollIndicators, 150);
+    window.addEventListener('resize', updateScrollIndicators);
+
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('scroll', updateScrollIndicators);
+      window.removeEventListener('resize', updateScrollIndicators);
+      clearTimeout(timeout);
+    };
+  }, [isOpen, presets]);
+
+  // Global mousemove and mouseup for drag-to-scroll
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleMouseMove = (e) => {
+      if (!isDraggingRef.current) return;
+      const el = presetsRef.current;
+      if (!el) return;
+
+      const deltaX = e.pageX - startXRef.current;
+      if (Math.abs(deltaX) > 4) {
+        hasDraggedRef.current = true;
+      }
+
+      const now = Date.now();
+      const dt = now - lastTimeRef.current;
+      if (dt > 0) {
+        velocityRef.current = (e.pageX - lastXRef.current) / dt;
+      }
+      lastXRef.current = e.pageX;
+      lastTimeRef.current = now;
+
+      el.scrollLeft = scrollLeftStartRef.current - deltaX;
+      updateScrollIndicators();
+    };
+
+    const handleMouseUp = () => {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      setIsDragging(false);
+
+      const el = presetsRef.current;
+      if (el && Math.abs(velocityRef.current) > 0.2) {
+        const momentum = velocityRef.current * 180;
+        el.scrollBy({ left: -momentum, behavior: 'smooth' });
+      }
+
+      setTimeout(() => {
+        hasDraggedRef.current = false;
+        updateScrollIndicators();
+      }, 60);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isOpen]);
+
+  const handleMouseDown = (e) => {
+    if (e.button !== 0) return;
+    const el = presetsRef.current;
+    if (!el) return;
+
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    startXRef.current = e.pageX;
+    scrollLeftStartRef.current = el.scrollLeft;
+    hasDraggedRef.current = false;
+    lastXRef.current = e.pageX;
+    lastTimeRef.current = Date.now();
+    velocityRef.current = 0;
+  };
+
+  const handlePresetClick = (e, preset) => {
+    if (hasDraggedRef.current) {
+      e.stopPropagation();
+      return;
+    }
+    handleSelectPreset(preset);
+    e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  };
+
+  const {
+    modalContentRef,
+    overlayRef,
+    isDragging: isModalDragging,
+    handleDragStartProps: modalDragProps,
+  } = useDragToClose({ onClose, threshold: 80 });
+
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-handle" />
+    <div className="modal-overlay" ref={overlayRef} onClick={onClose}>
+      <div
+        ref={modalContentRef}
+        className="modal-content"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top Handle Bar - click and drag down to dismiss */}
+        <div
+          className={`modal-handle-bar ${isModalDragging ? 'is-dragging' : ''}`}
+          {...modalDragProps}
+          title="גרור למטה לסגירה"
+        >
+          <div className="modal-handle" />
+        </div>
 
-        {/* Header */}
+        {/* Header - also supports pulling down from empty area */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             marginBottom: 'var(--space-lg)',
+            cursor: isModalDragging ? 'grabbing' : 'default',
+          }}
+          onMouseDown={(e) => {
+            if (e.target.closest('button') || e.target.closest('input')) return;
+            modalDragProps.onMouseDown(e);
+          }}
+          onTouchStart={(e) => {
+            if (e.target.closest('button') || e.target.closest('input')) return;
+            modalDragProps.onTouchStart(e);
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -165,40 +328,48 @@ export default function EqualizerModal({ isOpen, onClose }) {
           </div>
         </div>
 
-        {/* Presets Chips */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 8,
-            overflowX: 'auto',
-            paddingBottom: 12,
-            scrollbarWidth: 'none',
-            marginBottom: 'var(--space-lg)',
-          }}
-        >
-          {presets.map((p) => {
-            const isSelected = activePreset === p.id;
-            return (
-              <button
-                key={p.id}
-                onClick={() => handleSelectPreset(p)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 'var(--radius-full)',
-                  fontSize: '0.8125rem',
-                  fontWeight: isSelected ? 600 : 400,
-                  background: isSelected ? 'var(--accent)' : 'var(--bg-elevated)',
-                  color: isSelected ? '#000' : 'var(--text-primary)',
-                  border: '1px solid var(--glass-border)',
-                  whiteSpace: 'nowrap',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {p.name}
-              </button>
-            );
-          })}
+        {/* Presets Chips with Wheel & Drag-to-Scroll */}
+        <div className="eq-presets-container">
+          {canScrollLeft && (
+            <button
+              className="eq-scroll-btn left"
+              onClick={() => scrollByAmount(-160)}
+              title="Scroll left"
+              aria-label="Scroll left"
+            >
+              <IconChevronLeft size={16} />
+            </button>
+          )}
+
+          <div
+            ref={presetsRef}
+            className={`eq-presets-scroll ${isDragging ? 'is-dragging' : ''}`}
+            onMouseDown={handleMouseDown}
+          >
+            {presets.map((p) => {
+              const isSelected = activePreset === p.id;
+              return (
+                <button
+                  key={p.id}
+                  className={`eq-preset-chip ${isSelected ? 'active' : ''}`}
+                  onClick={(e) => handlePresetClick(e, p)}
+                >
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+
+          {canScrollRight && (
+            <button
+              className="eq-scroll-btn right"
+              onClick={() => scrollByAmount(160)}
+              title="Scroll right"
+              aria-label="Scroll right"
+            >
+              <IconChevronRight size={16} />
+            </button>
+          )}
         </div>
 
         {/* 10-Band Interactive Sliders */}
@@ -258,6 +429,12 @@ export default function EqualizerModal({ isOpen, onClose }) {
                     step="1"
                     value={val}
                     onChange={(e) => handleBandChange(idx, e.target.value)}
+                    onWheel={(e) => {
+                      e.preventDefault();
+                      const step = e.deltaY < 0 ? 1 : -1;
+                      const nextVal = Math.min(12, Math.max(-12, val + step));
+                      handleBandChange(idx, nextVal);
+                    }}
                     style={{
                       writingMode: 'vertical-lr',
                       direction: 'rtl',

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'soniclink-v1';
+const CACHE_NAME = 'homeify-v1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

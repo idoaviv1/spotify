@@ -16,18 +16,24 @@ export default function SearchPage() {
   const playSong = usePlayerStore((s) => s.playSong);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
   const currentSong = usePlayerStore((s) => s.currentSong);
+  const openContextMenu = usePlayerStore((s) => s.openContextMenu);
   const debounceRef = useRef(null);
+  const searchSeqRef = useRef(0);
 
   const handleSearch = useCallback(async (searchQuery) => {
     if (!searchQuery.trim()) {
+      searchSeqRef.current += 1;
       setResults([]);
       setHasSearched(false);
+      setIsSearching(false);
       return;
     }
+    const seq = ++searchSeqRef.current;
     setIsSearching(true);
     setHasSearched(true);
     try {
       const data = await api.searchSongs(searchQuery);
+      if (seq !== searchSeqRef.current) return;
       const items = data.results || [];
       setResults(items);
 
@@ -36,12 +42,19 @@ export default function SearchPage() {
       for (const item of items) {
         offMap[item.youtube_id] = await isSongOffline(item);
       }
-      setOfflineMap(offMap);
+      if (seq === searchSeqRef.current) {
+        setOfflineMap(offMap);
+      }
     } catch (err) {
-      console.error('Search error:', err);
-      setResults([]);
+      if (seq === searchSeqRef.current) {
+        console.error('Search error:', err);
+        setResults([]);
+      }
+    } finally {
+      if (seq === searchSeqRef.current) {
+        setIsSearching(false);
+      }
     }
-    setIsSearching(false);
   }, []);
 
   const handleInputChange = (e) => {
@@ -129,7 +142,7 @@ export default function SearchPage() {
             <div key={i} className="song-item">
               <div className="skeleton skeleton-cover" />
               <div className="song-info" style={{ gap: 6 }}>
-                <div className="skeleton skeleton-text" style={{ width: `${50 + Math.random() * 40}%` }} />
+                <div className="skeleton skeleton-text" style={{ width: `${55 + ((i * 17) % 35)}%` }} />
                 <div className="skeleton skeleton-text-sm" />
               </div>
             </div>
@@ -148,11 +161,31 @@ export default function SearchPage() {
             const isDownloadingThis = downloading[result.youtube_id];
 
             return (
-              <div key={result.youtube_id} className={`song-item ${isActive ? 'active' : ''}`}>
+              <div
+                key={result.youtube_id}
+                className={`song-item ${isActive ? 'active' : ''}`}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  openContextMenu(e.clientX, e.clientY, {
+                    title: result.title,
+                    artist: result.artist || result.uploader,
+                    youtube_url: result.youtube_url,
+                    youtube_id: result.youtube_id,
+                    duration: result.duration,
+                    cover_art_url: result.thumbnail,
+                    thumbnail: result.thumbnail,
+                  });
+                }}
+              >
                 <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => handlePlay(result)}>
                   {result.thumbnail ? (
                     <img className="song-cover" src={result.thumbnail} alt=""
-                      onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'flex'); }} />
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        if (e.target.nextSibling) {
+                          e.target.nextSibling.style.display = 'flex';
+                        }
+                      }} />
                   ) : null}
                   <div className="song-cover-placeholder" style={{ display: result.thumbnail ? 'none' : 'flex' }}>♪</div>
                 </div>
@@ -162,7 +195,7 @@ export default function SearchPage() {
                     {result.artist || result.uploader}
                     {offlineMap[result.youtube_id] ? (
                       <span style={{ color: '#10b981', marginLeft: 8, fontSize: '0.75rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        ✓ במכשיר (Offline)
+                        <IconOffline size={12} /> במכשיר (Offline)
                       </span>
                     ) : result.is_downloaded ? (
                       <span style={{ color: 'var(--accent)', marginLeft: 8, fontSize: '0.75rem', fontWeight: 600 }}>

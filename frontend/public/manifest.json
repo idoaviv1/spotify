@@ -1,7 +1,7 @@
 {
-  "name": "SonicLink Music",
-  "short_name": "SonicLink",
-  "description": "Personal Music Streaming over Tailscale",
+  "name": "Homeify Music",
+  "short_name": "Homeify",
+  "description": "Homeify - Personal Music Streaming over Tailscale",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",

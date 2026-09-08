@@ -6,7 +6,7 @@
 import { openDB } from 'idb';
 import api from '../api/client';
 
-const DB_NAME = 'soniclink-offline';
+const DB_NAME = 'homeify-offline';
 const DB_VERSION = 1;
 
 let dbPromise;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import usePlayerStore from '../../stores/playerStore';
 import api from '../../api/client';
 import { parseLRC } from '../../utils/format';
@@ -12,15 +12,13 @@ export default function LyricsOverlay() {
   const [error, setError] = useState(null);
   const activeLineRef = useRef(null);
   const containerRef = useRef(null);
+  const lyricsSeqRef = useRef(0);
 
-  useEffect(() => {
-    if (isLyricsOpen && currentSong) {
-      loadLyrics();
-    }
-  }, [isLyricsOpen, currentSong?.id, currentSong?.title]);
-
-  async function loadLyrics() {
+  const loadLyrics = useCallback(async () => {
     if (!currentSong) return;
+    const seq = ++lyricsSeqRef.current;
+    await Promise.resolve();
+    if (seq !== lyricsSeqRef.current) return;
     setIsLoading(true);
     setError(null);
     setLyricsData(null);
@@ -36,6 +34,8 @@ export default function LyricsOverlay() {
         }
       }
 
+      if (seq !== lyricsSeqRef.current) return;
+
       if (!data && currentSong.title) {
         data = await api.getLyricsDirect(
           currentSong.title,
@@ -44,6 +44,8 @@ export default function LyricsOverlay() {
           currentSong.duration || 0
         );
       }
+
+      if (seq !== lyricsSeqRef.current) return;
 
       if (data) {
         setLyricsData(data);
@@ -55,10 +57,20 @@ export default function LyricsOverlay() {
         setError('No lyrics found for this song');
       }
     } catch (err) {
+      if (seq !== lyricsSeqRef.current) return;
       setError(err.message || 'Could not fetch lyrics');
+    } finally {
+      if (seq === lyricsSeqRef.current) {
+        setIsLoading(false);
+      }
     }
-    setIsLoading(false);
-  }
+  }, [currentSong]);
+
+  useEffect(() => {
+    if (isLyricsOpen && currentSong) {
+      loadLyrics();
+    }
+  }, [isLyricsOpen, currentSong, loadLyrics]);
 
   // Find active line index
   let activeIndex = -1;

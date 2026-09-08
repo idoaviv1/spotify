@@ -1,9 +1,10 @@
 """Library router - manage the local music library."""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
-from database import get_db, Song
+from database import get_db, Song, User
+from auth import get_current_user
 
 router = APIRouter(prefix="/api/library", tags=["library"])
 
@@ -15,12 +16,10 @@ async def get_library(
     sort: str = Query("created_at", pattern="^(title|artist|album|created_at|duration)$"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     search: str = Query("", description="Filter by title or artist"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get all songs in the local library.
-    
-    Supports pagination, sorting, and filtering.
-    """
+    """Get all songs in the local library. Supports pagination, sorting, and filtering."""
     query = db.query(Song).filter(Song.file_path.isnot(None))
 
     # Search filter
@@ -51,10 +50,11 @@ async def get_library(
 
 
 @router.get("/stats")
-async def get_library_stats(db: Session = Depends(get_db)):
+async def get_library_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Get library statistics."""
-    from sqlalchemy import func
-
     total_songs = db.query(Song).filter(Song.file_path.isnot(None)).count()
     total_size = db.query(func.sum(Song.file_size)).filter(Song.file_path.isnot(None)).scalar() or 0
     total_duration = db.query(func.sum(Song.duration)).filter(Song.file_path.isnot(None)).scalar() or 0
@@ -75,10 +75,11 @@ async def get_library_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/artists")
-async def get_artists(db: Session = Depends(get_db)):
+async def get_artists(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Get all unique artists in the library."""
-    from sqlalchemy import func, distinct
-
     artists = (
         db.query(Song.artist, func.count(Song.id).label("song_count"))
         .filter(Song.file_path.isnot(None))
@@ -98,6 +99,7 @@ async def get_artists(db: Session = Depends(get_db)):
 @router.get("/recent")
 async def get_recent_songs(
     limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Get recently added songs."""
@@ -112,9 +114,12 @@ async def get_recent_songs(
 
 
 @router.get("/song/{song_id}")
-async def get_song(song_id: str, db: Session = Depends(get_db)):
+async def get_song(
+    song_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Get a specific song's details."""
-    from fastapi import HTTPException
     song = db.query(Song).filter(Song.id == song_id).first()
     if not song:
         raise HTTPException(status_code=404, detail="Song not found")

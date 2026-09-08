@@ -1,10 +1,11 @@
-"""History router - listening history tracking."""
-from fastapi import APIRouter, Depends, Query
+"""History router - listening history tracking isolated per user."""
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from pydantic import BaseModel
 
-from database import get_db, ListeningHistory, Song
+from database import get_db, ListeningHistory, Song, User
+from auth import get_current_user
 
 router = APIRouter(prefix="/api/history", tags=["history"])
 
@@ -18,10 +19,15 @@ class RecordPlayRequest(BaseModel):
 async def get_history(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get listening history, most recent first."""
-    query = db.query(ListeningHistory).order_by(desc(ListeningHistory.played_at))
+    """Get listening history for the current user, most recent first."""
+    query = (
+        db.query(ListeningHistory)
+        .filter(ListeningHistory.user_id == current_user.id)
+        .order_by(desc(ListeningHistory.played_at))
+    )
 
     total = query.count()
     entries = query.offset((page - 1) * limit).limit(limit).all()
@@ -35,15 +41,18 @@ async def get_history(
 
 
 @router.post("")
-async def record_play(req: RecordPlayRequest, db: Session = Depends(get_db)):
-    """Record a song play in history."""
-    from fastapi import HTTPException
-
+async def record_play(
+    req: RecordPlayRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Record a song play in the current user's history."""
     song = db.query(Song).filter(Song.id == req.song_id).first()
     if not song:
         raise HTTPException(status_code=404, detail="Song not found")
 
     entry = ListeningHistory(
+        user_id=current_user.id,
         song_id=req.song_id,
         duration_listened=req.duration_listened,
     )
@@ -56,12 +65,14 @@ async def record_play(req: RecordPlayRequest, db: Session = Depends(get_db)):
 @router.get("/top")
 async def get_most_played(
     limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get the most played songs."""
+    """Get the most played songs for the current user."""
     results = (
         db.query(Song, func.count(ListeningHistory.id).label("play_count"))
         .join(ListeningHistory, ListeningHistory.song_id == Song.id)
+        .filter(ListeningHistory.user_id == current_user.id)
         .group_by(Song.id)
         .order_by(func.count(ListeningHistory.id).desc())
         .limit(limit)
@@ -77,8 +88,11 @@ async def get_most_played(
 
 
 @router.delete("")
-async def clear_history(db: Session = Depends(get_db)):
-    """Clear all listening history."""
-    db.query(ListeningHistory).delete()
+async def clear_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Clear listening history for the current user."""
+    db.query(ListeningHistory).filter(ListeningHistory.user_id == current_user.id).delete()
     db.commit()
     return {"status": "cleared"}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# SonicLink - Personal Music Streamer Startup Script
+# Homeify - Personal Music Streamer Startup Script
 # ==============================================================================
 
 set -e
@@ -17,7 +17,7 @@ cleanup() {
     # Prevent repeated invocation
     trap - SIGINT SIGTERM SIGHUP EXIT
     echo ""
-    echo "🛑 Stopping SonicLink server..."
+    echo "🛑 Stopping Homeify server..."
     if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
         kill -TERM "$SERVER_PID" 2>/dev/null || true
         for _ in {1..20}; do
@@ -47,10 +47,11 @@ fi
 pkill -9 -f "uvicorn.*main:app.*${PORT}" 2>/dev/null || true
 
 echo "=================================================================="
-echo "🎵  Starting SonicLink Personal Music Server..."
+echo "🎵  Starting Homeify Personal Music Server..."
 echo "=================================================================="
-echo "📱  Tailscale URL (for your iPhone): http://${TAILSCALE_IP}:${PORT}"
-echo "💻  Localhost URL:                    http://localhost:${PORT}"
+echo "🌐  Web Browser & Remote Access:   http://${TAILSCALE_IP}:${PORT}"
+echo "💻  Localhost URL:                 http://localhost:${PORT}"
+echo "📱  Mobile & iOS App URL:          http://${TAILSCALE_IP}:${PORT}"
 echo "=================================================================="
 
 # Build frontend if dist doesn't exist

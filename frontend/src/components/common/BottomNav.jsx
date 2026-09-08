@@ -4,16 +4,20 @@ import {
   IconSearch,
   IconLibrary,
   IconSettings,
+  IconShield,
 } from './Icons';
+import useAuthStore from '../../stores/authStore';
 
 export default function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
+  const isAdmin = useAuthStore((s) => s.isAdmin);
 
   const navItems = [
     { path: '/', label: 'Home', icon: IconHome },
     { path: '/search', label: 'Search', icon: IconSearch },
     { path: '/library', label: 'Library', icon: IconLibrary },
+    ...(isAdmin ? [{ path: '/admin', label: 'Admin', icon: IconShield }] : []),
     { path: '/settings', label: 'Settings', icon: IconSettings },
   ];
 

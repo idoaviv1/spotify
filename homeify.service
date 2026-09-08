@@ -1,5 +1,5 @@
 [Unit]
-Description=Homeify (formerly SonicLink) Personal Music Server (Tailscale)
+Description=Homeify Personal Music Server (Tailscale)
 After=network.target tailscaled.service
 
 [Service]
