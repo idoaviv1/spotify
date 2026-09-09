@@ -12,18 +12,20 @@ function getServerUrl() {
   const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('soniclink_server_url');
   if (saved) return saved;
 
-  // If running inside Capacitor iOS native app (capacitor://localhost)
-  if (
-    typeof window !== 'undefined' &&
-    (window.location.protocol === 'capacitor:' ||
-     window.location.protocol === 'ionic:' ||
-     window.location.protocol === 'file:' ||
-     window.location.origin.includes('capacitor://'))
-  ) {
+  // If running inside Capacitor native app (iOS or Android)
+  const isNative = typeof window !== 'undefined' && (
+    (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
+    window.location.protocol === 'capacitor:' ||
+    window.location.protocol === 'ionic:' ||
+    window.location.protocol === 'file:' ||
+    window.location.origin.includes('capacitor://')
+  );
+
+  if (isNative) {
     return TAILSCALE_DEFAULT_URL;
   }
 
-  // Same origin when served by FastAPI backend or localhost
+  // Same origin when served by FastAPI backend or local dev server
   if (typeof window !== 'undefined') {
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       return window.location.port ? window.location.origin : 'http://localhost:8686';

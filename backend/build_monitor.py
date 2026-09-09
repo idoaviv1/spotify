@@ -46,7 +46,7 @@ while True:
             curr_action = f"Done: {a.get('name')}"
 
     if status != last_status or curr_action != last_action:
-        print(f"[{time.strftime('%H:%M:%S')}] Status: {status} | Current Step: {curr_action}")
+        print(f"[{time.strftime('%H:%M:%S')}] Status: {status} | Current Step: {curr_action}", flush=True)
         last_status = status
         last_action = curr_action
 

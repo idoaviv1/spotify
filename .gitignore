@@ -30,6 +30,13 @@ frontend/ios/App/Podfile.lock
 *.ipa
 Payload/
 
+# Android Build Artifacts
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/android/build/
+*.apk
+*.aab
+
 # OS / Editor
 .DS_Store
 Thumbs.db
