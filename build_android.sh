@@ -15,7 +15,7 @@ cd android
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk ANDROID_HOME=/home/idodi/Android/Sdk ./gradlew assembleDebug
 
 APK_SRC="$DIR/frontend/android/app/build/outputs/apk/debug/app-debug.apk"
-DEST_DIR="/media/windows/Shared-APK"
+DEST_DIR="/media/windows/Shared-APK/homeify"
 mkdir -p "$DEST_DIR"
 
 VERSION=$(node -p "require('../package.json').version || '1.0.0'")
