@@ -143,7 +143,7 @@ export default function NowPlaying({ onOpenEqualizer }) {
   const isScrubbing = scrubTime !== null;
   const activeTime = isScrubbing ? scrubTime : currentTime;
   const progressPct = duration > 0 ? Math.min(100, Math.max(0, (activeTime / duration) * 100)) : 0;
-  const coverUrl = currentSong.cover_art_url || currentSong.thumbnail || '';
+  const coverUrl = currentSong.cover_data_url || currentSong.cover_art_url || currentSong.thumbnail || '';
 
   // Dynamic transform style for swipe-down feel
   const transformStyle = isNowPlayingOpen

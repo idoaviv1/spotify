@@ -281,8 +281,8 @@ export default function LibraryPage() {
                     openContextMenu(e.clientX, e.clientY, { ...song, id, is_downloaded: true });
                   }}
                 >
-                  {song.cover_art_url || song.thumbnail ? (
-                    <img className="song-cover" src={song.cover_art_url || song.thumbnail} alt="" />
+                  {song.cover_data_url || song.cover_art_url || song.thumbnail ? (
+                    <img className="song-cover" src={song.cover_data_url || song.cover_art_url || song.thumbnail} alt="" />
                   ) : (
                     <div className="song-cover-placeholder">♪</div>
                   )}

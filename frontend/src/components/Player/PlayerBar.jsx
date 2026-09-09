@@ -82,7 +82,7 @@ export default function PlayerBar({ onOpenEqualizer }) {
   if (!currentSong) return null;
 
   const progressPct = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
-  const coverUrl = currentSong.cover_art_url || currentSong.thumbnail || '';
+  const coverUrl = currentSong.cover_data_url || currentSong.cover_art_url || currentSong.thumbnail || '';
   const effectiveVolume = isMuted ? 0 : volume;
 
   const handleSeekChange = (e) => {

@@ -236,9 +236,10 @@ const usePlayerStore = create((set, get) => ({
         audioSrc = api.getStreamUrl(song.id);
       }
 
-      // 3. If it has a YouTube URL, stream via server proxy (bypasses 403 & unsupported codecs)
-      if (!audioSrc && song.youtube_url) {
-        audioSrc = api.getYoutubeStreamUrl(song.youtube_url);
+      // 3. If it has a YouTube URL or ID, stream via server proxy (bypasses 403 & unsupported codecs)
+      const ytUrl = song.youtube_url || (song.youtube_id ? `https://www.youtube.com/watch?v=${song.youtube_id}` : null);
+      if (!audioSrc && ytUrl) {
+        audioSrc = api.getYoutubeStreamUrl(ytUrl);
       }
 
       if (!audioSrc) {
@@ -277,13 +278,14 @@ const usePlayerStore = create((set, get) => ({
         }, 50);
       }
 
-      // Update MediaSession for lock screen
+      // Update MediaSession for lock screen (supports offline cover_data_url)
       if ('mediaSession' in navigator) {
+        const artworkUrl = song.cover_data_url || song.cover_art_url || song.thumbnail;
         navigator.mediaSession.metadata = new MediaMetadata({
           title: song.title || 'Unknown',
           artist: song.artist || 'Unknown Artist',
           album: song.album || '',
-          artwork: (song.cover_art_url || song.thumbnail) ? [{ src: song.cover_art_url || song.thumbnail, sizes: '512x512', type: 'image/jpeg' }] : [],
+          artwork: artworkUrl ? [{ src: artworkUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
         });
 
         navigator.mediaSession.setActionHandler('play', () => {
