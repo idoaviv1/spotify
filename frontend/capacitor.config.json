@@ -1,5 +1,14 @@
 {
   "appId": "com.homeify.music",
   "appName": "Homeify",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }

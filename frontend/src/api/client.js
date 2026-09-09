@@ -5,41 +5,64 @@
  * Falls back to localhost for development.
  */
 
+import { Capacitor } from '@capacitor/core';
+
 const STORAGE_KEY = 'homeify_server_url';
 export const TAILSCALE_DEFAULT_URL = 'http://100.127.161.16:8686';
 
-function getServerUrl() {
-  const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('soniclink_server_url');
-  if (saved) return saved;
+export function getServerUrl() {
+  const saved = typeof localStorage !== 'undefined'
+    ? (localStorage.getItem(STORAGE_KEY) || localStorage.getItem('soniclink_server_url'))
+    : null;
+  if (saved) return saved.replace(/\/$/, '');
 
-  // If running inside Capacitor native app (iOS or Android)
-  const isNative = typeof window !== 'undefined' && (
-    (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
-    window.location.protocol === 'capacitor:' ||
-    window.location.protocol === 'ionic:' ||
-    window.location.protocol === 'file:' ||
-    window.location.origin.includes('capacitor://')
-  );
-
-  if (isNative) {
-    return TAILSCALE_DEFAULT_URL;
+  // 1. If running inside Capacitor native app (Android or iOS)
+  try {
+    if (Capacitor && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform()) {
+      return TAILSCALE_DEFAULT_URL;
+    }
+  } catch (e) {
+    console.warn('Capacitor check failed:', e);
   }
 
-  // Same origin when served by FastAPI backend or local dev server
+  // 2. Mobile WebView heuristics (Capacitor Android uses localhost with empty port)
   if (typeof window !== 'undefined') {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return window.location.port ? window.location.origin : 'http://localhost:8686';
+    const isMobileNative = (
+      window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'ionic:' ||
+      window.location.protocol === 'file:' ||
+      window.location.origin.includes('capacitor://') ||
+      (window.location.hostname === 'localhost' && (!window.location.port || window.location.port === ''))
+    );
+
+    if (isMobileNative) {
+      return TAILSCALE_DEFAULT_URL;
     }
-    if (window.location.origin && window.location.origin.startsWith('http')) {
+
+    // 3. Web browser accessing through remote/Tailscale IP or domain
+    if (window.location.origin && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
       return window.location.origin;
     }
+
+    // 4. Vite local dev server (port 5173 -> backend 8686)
+    if (window.location.port && window.location.port !== '8686') {
+      return `http://${window.location.hostname}:8686`;
+    }
+
+    // 5. Direct access to server in browser on localhost:8686
+    return window.location.origin;
   }
 
   return TAILSCALE_DEFAULT_URL;
 }
 
 export function setServerUrl(url) {
-  localStorage.setItem(STORAGE_KEY, url.replace(/\/$/, ''));
+  if (!url) {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('soniclink_server_url');
+    return;
+  }
+  localStorage.setItem(STORAGE_KEY, url.trim().replace(/\/$/, ''));
 }
 
 export function getConfiguredServerUrl() {
@@ -65,7 +88,20 @@ async function request(path, options = {}) {
     config.body = JSON.stringify(options.body);
   }
 
-  const response = await fetch(url, config);
+  let response;
+  try {
+    response = await fetch(url, config);
+  } catch (netErr) {
+    console.error(`Network fetch error connecting to ${url}:`, netErr);
+    const isTailscale = base.includes('100.');
+    const errorMsg = isTailscale
+      ? `לא ניתן להתחבר לשרת (${base}). ודא שחיבור ה-Tailscale מופעל בטלפון.`
+      : `לא ניתן להתחבר לשרת בכתובת (${base}). שגיאת תקשורת.`;
+    const err = new Error(errorMsg);
+    err.originalError = netErr;
+    err.targetUrl = base;
+    throw err;
+  }
 
   if (response.status === 401 && !path.startsWith('/api/auth/login')) {
     if (typeof localStorage !== 'undefined') {
