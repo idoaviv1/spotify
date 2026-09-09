@@ -89,8 +89,15 @@ const useAuthStore = create((set, get) => ({
         });
       }
     } catch (err) {
-      console.warn('Token validation failed:', err);
-      get().logout();
+      // ONLY log out if the server explicitly rejected with 401 Unauthorized
+      if (err.status === 401 || err.message?.includes('401') || err.message?.includes('Unauthorized')) {
+        console.warn('Session expired (401), logging out:', err);
+        get().logout();
+      } else {
+        // Device is offline or server is unreachable over Tailscale:
+        // Do NOT log out! Keep local session so user can access downloaded offline music!
+        console.info('Offline mode active - retaining cached authentication session');
+      }
     }
   },
 

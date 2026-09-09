@@ -21,7 +21,7 @@ export default function PlaylistPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [offlineStatus, setOfflineStatus] = useState({});
-  const [cachingId, setCachingId] = useState(null);
+  const [cachingIds, setCachingIds] = useState({});
   const [isUploadingCover, setIsUploadingCover] = useState(false);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState('');
@@ -113,16 +113,27 @@ export default function PlaylistPage() {
 
   async function handleCacheOffline(song, e) {
     e.stopPropagation();
-    const songId = song.id || song.songId;
-    if (!songId || cachingId) return;
-    setCachingId(songId);
+    const songId = song.id || song.songId || song.youtube_id;
+    if (!songId || cachingIds[songId]) return;
+    setCachingIds((prev) => ({ ...prev, [songId]: true }));
     try {
-      await downloadSongEverywhere(song);
-      setOfflineStatus((prev) => ({ ...prev, [songId]: true }));
+      const saved = await downloadSongEverywhere(song);
+      const savedId = saved.id || songId;
+      setOfflineStatus((prev) => ({
+        ...prev,
+        [songId]: true,
+        [savedId]: true,
+        ...(song.youtube_id ? { [song.youtube_id]: true } : {})
+      }));
     } catch (err) {
       console.error('Failed to cache song:', err);
+    } finally {
+      setCachingIds((prev) => {
+        const next = { ...prev };
+        delete next[songId];
+        return next;
+      });
     }
-    setCachingId(null);
   }
 
   // ─── One-Click Download All Songs to Device ───
@@ -444,8 +455,8 @@ export default function PlaylistPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {songs.map((song, idx) => {
             const isPlaying = currentSong?.id === song.id;
-            const isOffline = offlineStatus[song.id];
-            const isCaching = cachingId === song.id;
+            const isOffline = offlineStatus[song.id] || (song.youtube_id && offlineStatus[song.youtube_id]);
+            const isCaching = Boolean(cachingIds[song.id] || (song.songId && cachingIds[song.songId]) || (song.youtube_id && cachingIds[song.youtube_id]));
 
             return (
               <div

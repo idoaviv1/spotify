@@ -15,10 +15,11 @@ export default function LibraryPage() {
   const [stats, setStats] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isOfflineMode, setIsOfflineMode] = useState(!navigator.onLine);
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [offlineSongs, setOfflineSongs] = useState({});
-  const [cachingId, setCachingId] = useState(null);
+  const [cachingIds, setCachingIds] = useState({});
 
   const playSong = usePlayerStore((s) => s.playSong);
   const playList = usePlayerStore((s) => s.playList);
@@ -29,63 +30,88 @@ export default function LibraryPage() {
   const favoriteIds = usePlayerStore((s) => s.favoriteIds);
   const navigate = useNavigate();
 
-  const loadData = useCallback(async (isMountedRef) => {
-    let serverSongs = [];
-    try {
-      const [libData, playlistData, statsData] = await Promise.all([
-        api.getLibrary(1, 200).catch(() => ({ songs: [] })),
-        api.getPlaylists().catch(() => ({ playlists: [] })),
-        api.getLibraryStats().catch(() => null),
-      ]);
-      if (isMountedRef && !isMountedRef()) return;
-      serverSongs = libData.songs || [];
-      setSongs(serverSongs);
-      setPlaylists(playlistData.playlists || []);
-      setStats(statsData);
-    } catch (err) {
-      console.warn('Library server load error (might be offline):', err);
-    }
-
-    // Load local offline storage
+  // 1. Instantly load local offline songs from IndexedDB (0ms network delay)
+  const loadOfflineDataImmediately = useCallback(async () => {
     try {
       const localCached = await getAllOfflineSongs();
-      if (isMountedRef && !isMountedRef()) return;
-      setOfflineList(localCached || []);
+      const cachedList = localCached || [];
+      setOfflineList(cachedList);
+
       const bytes = await getOfflineStorageSize();
-      if (isMountedRef && !isMountedRef()) return;
       setOfflineBytes(bytes);
 
       const statusMap = {};
-      for (const item of (localCached || [])) {
-        statusMap[item.songId || item.id] = true;
+      for (const item of cachedList) {
+        if (item.songId) statusMap[item.songId] = true;
+        if (item.id) statusMap[item.id] = true;
+        if (item.youtube_id) statusMap[item.youtube_id] = true;
       }
+      setOfflineSongs(statusMap);
 
-      // Check remaining server songs concurrently
-      const unverified = serverSongs.filter(s => s.id && !statusMap[s.id]);
-      if (unverified.length > 0) {
-        const results = await Promise.all(
-          unverified.map(async s => [s.id, await isSongOffline(s)])
-        );
-        if (isMountedRef && !isMountedRef()) return;
-        for (const [id, isOff] of results) {
-          statusMap[id] = isOff;
+      // If device is offline or user has downloaded songs and no server songs yet, default to offline tab
+      if (!navigator.onLine || cachedList.length > 0) {
+        if (!navigator.onLine) {
+          setTab('offline');
+          setIsOfflineMode(true);
+          setIsLoading(false);
         }
+      }
+      return cachedList;
+    } catch (e) {
+      console.warn('Failed to load local offline data:', e);
+      return [];
+    }
+  }, []);
+
+  const loadData = useCallback(async (isMountedRef) => {
+    // A. Read local offline storage immediately
+    const localCached = await loadOfflineDataImmediately();
+    if (isMountedRef && !isMountedRef()) return;
+
+    // B. Fetch server data with a 3.5-second timeout so offline devices never hang!
+    let serverSongs = [];
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Server timeout - running in offline mode')), 3500)
+    );
+
+    try {
+      const serverFetch = Promise.all([
+        api.getLibrary(1, 200),
+        api.getPlaylists(),
+        api.getLibraryStats(),
+      ]);
+
+      const [libData, playlistData, statsData] = await Promise.race([serverFetch, timeoutPromise]);
+      if (isMountedRef && !isMountedRef()) return;
+
+      serverSongs = libData?.songs || [];
+      setSongs(serverSongs);
+      setPlaylists(playlistData?.playlists || []);
+      setStats(statsData);
+      setIsOfflineMode(false);
+
+      // Sync offline indicators across server songs
+      const statusMap = {};
+      for (const item of localCached) {
+        if (item.songId) statusMap[item.songId] = true;
+        if (item.id) statusMap[item.id] = true;
+        if (item.youtube_id) statusMap[item.youtube_id] = true;
       }
 
       setOfflineSongs(statusMap);
-
-      // If server returned no songs or is offline, switch to Offline tab automatically
-      if (serverSongs.length === 0 && localCached && localCached.length > 0) {
+    } catch (err) {
+      console.warn('Server unreachable or timeout, running in offline mode:', err.message);
+      setIsOfflineMode(true);
+      // Automatically switch to offline tab if server is unreachable and we have offline songs
+      if (localCached.length > 0) {
         setTab('offline');
       }
-    } catch (err) {
-      console.error('Offline storage load error:', err);
     } finally {
       if (!isMountedRef || isMountedRef()) {
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [loadOfflineDataImmediately]);
 
   useEffect(() => {
     let mounted = true;
@@ -129,27 +155,45 @@ export default function LibraryPage() {
     if (!confirm(`האם להסיר את השיר "${song.title}" מהזיכרון של המכשיר?`)) return;
     const id = song.songId || song.id;
     await removeOfflineAudio(song);
-    setOfflineList(prev => prev.filter(s => (s.songId || s.id) !== id));
-    setOfflineSongs(prev => ({ ...prev, [id]: false }));
+    setOfflineList(prev => prev.filter(s => (s.songId || s.id) !== id && (!song.youtube_id || s.youtube_id !== song.youtube_id)));
+    setOfflineSongs(prev => ({
+      ...prev,
+      [id]: false,
+      ...(song.youtube_id ? { [song.youtube_id]: false } : {})
+    }));
     const bytes = await getOfflineStorageSize();
     setOfflineBytes(bytes);
   };
 
   const handleCacheOffline = async (e, song) => {
     e.stopPropagation();
-    const id = song.id || song.songId;
-    setCachingId(id);
+    const id = song.id || song.songId || song.youtube_id;
+    if (!id || cachingIds[id]) return;
+
+    // Mark ONLY this song as downloading (supports concurrent downloads!)
+    setCachingIds(prev => ({ ...prev, [id]: true }));
     try {
-      await downloadSongEverywhere(song);
-      setOfflineSongs(prev => ({ ...prev, [id]: true }));
+      const saved = await downloadSongEverywhere(song);
+      const savedId = saved.id || id;
+      setOfflineSongs(prev => ({
+        ...prev,
+        [id]: true,
+        [savedId]: true,
+        ...(song.youtube_id ? { [song.youtube_id]: true } : {})
+      }));
       const localCached = await getAllOfflineSongs();
       setOfflineList(localCached);
       const bytes = await getOfflineStorageSize();
       setOfflineBytes(bytes);
     } catch (err) {
       console.error('Cache error:', err);
+    } finally {
+      setCachingIds(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     }
-    setCachingId(null);
   };
 
   return (
@@ -213,13 +257,55 @@ export default function LibraryPage() {
         </div>
       </div>
 
+      {/* Offline Storage Information Card */}
+      {tab === 'offline' && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '14px 18px',
+          marginBottom: 18,
+          borderRadius: 'var(--radius-lg)',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.08) 100%)',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(16, 185, 129, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#10b981',
+              flexShrink: 0,
+            }}>
+              <IconOffline size={24} />
+            </div>
+            <div>
+              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>נפח אחסון תפוס בטלפון:</span>
+                <span style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: 6, fontSize: '0.95rem' }}>
+                  {formatFileSize(offlineBytes)}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 3 }}>
+                {offlineList.length} שירים שמורים פיזית בזיכרון המכשיר · זמינים תמיד ללא אינטרנט
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="tabs">
         <button className={`tab ${tab === 'songs' ? 'active' : ''}`} onClick={() => setTab('songs')}>
           All Songs ({songs.length})
         </button>
         <button className={`tab ${tab === 'offline' ? 'active' : ''}`} onClick={() => setTab('offline')}>
-          Downloaded ({offlineList.length})
+          Downloaded ({offlineList.length}{offlineBytes > 0 ? ` · ${formatFileSize(offlineBytes)}` : ''})
         </button>
         <button className={`tab ${tab === 'playlists' ? 'active' : ''}`} onClick={() => setTab('playlists')}>
           Playlists
@@ -270,6 +356,7 @@ export default function LibraryPage() {
               const id = song.id || song.songId;
               const isOff = offlineSongs[id] || tab === 'offline';
               const isCurr = currentSong?.id === id || (currentSong?.title === song.title && currentSong?.artist === song.artist);
+              const isDling = Boolean(cachingIds[id] || cachingIds[song.songId] || (song.youtube_id && cachingIds[song.youtube_id]));
 
               return (
                 <div
@@ -313,10 +400,10 @@ export default function LibraryPage() {
                         className="btn-icon"
                         style={{ width: 32, height: 32 }}
                         onClick={(e) => handleCacheOffline(e, song)}
-                        disabled={cachingId === id}
+                        disabled={isDling}
                         title="Save to Phone"
                       >
-                        {cachingId === id ? (
+                        {isDling ? (
                           <div className="loading-spinner" style={{ width: 14, height: 14 }} />
                         ) : (
                           <IconDownload size={16} style={{ color: 'var(--text-tertiary)' }} />

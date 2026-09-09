@@ -100,6 +100,7 @@ async function request(path, options = {}) {
     const err = new Error(errorMsg);
     err.originalError = netErr;
     err.targetUrl = base;
+    err.isNetworkError = true;
     throw err;
   }
 
@@ -115,7 +116,9 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || `Request failed: ${response.status}`);
+    const err = new Error(error.detail || `Request failed: ${response.status}`);
+    err.status = response.status;
+    throw err;
   }
 
   return response.json();

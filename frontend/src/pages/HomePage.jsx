@@ -229,16 +229,28 @@ export default function HomePage() {
   const handleDownloadSong = async (e, song) => {
     e.stopPropagation();
     const ytId = song.youtube_id || song.id;
-    if (!ytId) return;
+    if (!ytId || downloadingRec[ytId]) return;
 
     setDownloadingRec((prev) => ({ ...prev, [ytId]: true }));
     try {
-      await downloadSongEverywhere(song);
-      setRecOfflineMap((prev) => ({ ...prev, [ytId]: true }));
+      const saved = await downloadSongEverywhere(song);
+      const savedId = saved.id || ytId;
+      setRecOfflineMap((prev) => ({
+        ...prev,
+        [ytId]: true,
+        [savedId]: true,
+        ...(song.id ? { [song.id]: true } : {}),
+        ...(song.youtube_id ? { [song.youtube_id]: true } : {}),
+      }));
     } catch (err) {
       console.error('Failed to download song:', err);
+    } finally {
+      setDownloadingRec((prev) => {
+        const next = { ...prev };
+        delete next[ytId];
+        return next;
+      });
     }
-    setDownloadingRec((prev) => ({ ...prev, [ytId]: false }));
   };
 
   const handlePlaySong = (song) => {

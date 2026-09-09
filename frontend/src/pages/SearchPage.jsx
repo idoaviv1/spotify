@@ -87,11 +87,17 @@ export default function SearchPage() {
 
   const handleDownload = async (result) => {
     const key = result.youtube_id || result.song_id;
+    if (!key || downloading[key]) return;
     setDownloading(prev => ({ ...prev, [key]: true }));
     setShowMenu(null);
     try {
       const saved = await downloadSongEverywhere(result);
-      setOfflineMap(prev => ({ ...prev, [key]: true }));
+      setOfflineMap(prev => ({
+        ...prev,
+        [key]: true,
+        ...(saved.id ? { [saved.id]: true } : {}),
+        ...(result.youtube_id ? { [result.youtube_id]: true } : {}),
+      }));
       setResults(prev => prev.map(item =>
         (item.youtube_id === result.youtube_id || (item.song_id && item.song_id === saved.id))
           ? { ...item, is_downloaded: true, song_id: saved.id }
@@ -99,8 +105,13 @@ export default function SearchPage() {
       ));
     } catch (err) {
       console.error('Download error:', err);
+    } finally {
+      setDownloading(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
     }
-    setDownloading(prev => ({ ...prev, [key]: false }));
   };
 
   const handleAddToQueue = (result) => {
