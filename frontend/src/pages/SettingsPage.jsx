@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api, { getConfiguredServerUrl, setServerUrl, TAILSCALE_DEFAULT_URL } from '../api/client';
 import usePlayerStore from '../stores/playerStore';
 import useAuthStore from '../stores/authStore';
+import useI18nStore from '../stores/i18nStore';
 import {
   getOfflineStorageSize,
   getAllOfflineSongs,
@@ -31,6 +32,10 @@ export default function SettingsPage({ onOpenEqualizer }) {
   const user = useAuthStore((s) => s.user);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const logout = useAuthStore((s) => s.logout);
+
+  const language = useI18nStore((s) => s.language);
+  const setLanguage = useI18nStore((s) => s.setLanguage);
+  const t = useI18nStore((s) => s.t);
 
   const [serverInput, setServerInput] = useState(getConfiguredServerUrl());
   const [testingStatus, setTestingStatus] = useState(null); // 'testing' | 'success' | 'error'
@@ -122,7 +127,7 @@ export default function SettingsPage({ onOpenEqualizer }) {
   }
 
   async function handleClearStorage() {
-    if (!confirm('Delete all offline cached music from this device?')) return;
+    if (!confirm(language === 'he' ? 'האם למחוק את כל השירים השמורים באופליין במכשיר זה?' : 'Delete all offline cached music from this device?')) return;
     setIsClearing(true);
     try {
       for (const song of offlineSongs) {
@@ -239,10 +244,76 @@ export default function SettingsPage({ onOpenEqualizer }) {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="text-display">Settings ⚙️</h1>
+        <h1 className="text-display">{t('settings.title')} ⚙️</h1>
         <p className="text-caption" style={{ marginTop: 4 }}>
-          Personalize themes, audio crossfade, remote web access, backups, and storage.
+          {language === 'he' 
+            ? 'התאם אישית ערכות נושא, שפת ממשק, קרוספייד סאונד, חיבור מרוחק, גיבויים ואחסון.'
+            : 'Personalize themes, interface language, audio crossfade, remote access, backups, and storage.'}
         </p>
+      </div>
+
+      {/* ─── Interface Language / שפת ממשק ─── */}
+      <div className="settings-group">
+        <div className="settings-group-title">
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <IconGlobe size={18} style={{ color: 'var(--accent)' }} />
+            {t('settings.languageTitle')}
+          </span>
+        </div>
+        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+            {t('settings.languageDesc')}
+          </p>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: 12,
+          }}>
+            <button
+              type="button"
+              className={`btn ${language === 'he' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => {
+                setLanguage('he');
+                triggerHaptic('selection');
+              }}
+              style={{
+                justifyContent: 'center',
+                padding: '14px 18px',
+                fontSize: '0.9375rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <span style={{ fontSize: '1.25rem' }}>🇮🇱</span>
+              <span>{t('settings.langHebrew')}</span>
+              {language === 'he' && <IconCheck size={18} />}
+            </button>
+
+            <button
+              type="button"
+              className={`btn ${language === 'en' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => {
+                setLanguage('en');
+                triggerHaptic('selection');
+              }}
+              style={{
+                justifyContent: 'center',
+                padding: '14px 18px',
+                fontSize: '0.9375rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <span style={{ fontSize: '1.25rem' }}>🇺🇸</span>
+              <span>{t('settings.langEnglish')}</span>
+              {language === 'en' && <IconCheck size={18} />}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ─── Account & Session ─── */}
@@ -250,7 +321,7 @@ export default function SettingsPage({ onOpenEqualizer }) {
         <div className="settings-group-title">
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <IconUser size={18} style={{ color: 'var(--accent)' }} />
-            Account & Security (פרטי חשבון ואבטחה)
+            {t('settings.accountTitle')}
           </span>
         </div>
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

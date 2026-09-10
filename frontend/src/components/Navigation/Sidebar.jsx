@@ -13,6 +13,7 @@ import {
 } from '../common/Icons';
 import api from '../../api/client';
 import useAuthStore from '../../stores/authStore';
+import useI18nStore from '../../stores/i18nStore';
 
 export default function Sidebar() {
   const location = useLocation();
@@ -20,6 +21,7 @@ export default function Sidebar() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const logout = useAuthStore((s) => s.logout);
+  const t = useI18nStore((s) => s.t);
 
   const [playlists, setPlaylists] = useState([]);
   const [serverOnline, setServerOnline] = useState(true);
@@ -76,11 +78,11 @@ export default function Sidebar() {
   }
 
   const navItems = [
-    { path: '/', label: 'Home', icon: IconHome },
-    { path: '/search', label: 'Search', icon: IconSearch },
-    { path: '/library', label: 'Your Library', icon: IconLibrary },
-    ...(isAdmin ? [{ path: '/admin', label: 'ניהול מערכת', icon: IconShield }] : []),
-    { path: '/settings', label: 'Settings', icon: IconSettings },
+    { path: '/', label: t('nav.home'), icon: IconHome },
+    { path: '/search', label: t('nav.search'), icon: IconSearch },
+    { path: '/library', label: t('nav.library'), icon: IconLibrary },
+    ...(isAdmin ? [{ path: '/admin', label: t('nav.admin'), icon: IconShield }] : []),
+    { path: '/settings', label: t('nav.settings'), icon: IconSettings },
   ];
 
   const handleLogout = () => {

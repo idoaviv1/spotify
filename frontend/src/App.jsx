@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import usePlayerStore from './stores/playerStore';
 import useAuthStore from './stores/authStore';
+import useI18nStore from './stores/i18nStore';
 
 // Pages
 import HomePage from './pages/HomePage';
@@ -70,6 +71,15 @@ export default function App() {
       document.documentElement.setAttribute('data-theme', savedTheme);
     }
   }, [initAudio, fetchFavorites, isAuthenticated]);
+
+  const language = useI18nStore((s) => s.language);
+  useEffect(() => {
+    const isRtl = language === 'he';
+    document.documentElement.setAttribute('dir', isRtl ? 'rtl' : 'ltr');
+    document.documentElement.setAttribute('lang', language);
+    document.body.classList.toggle('rtl-mode', isRtl);
+    document.body.classList.toggle('ltr-mode', !isRtl);
+  }, [language]);
 
   // Global Keyboard Shortcuts
   const handleKeyDown = useCallback(

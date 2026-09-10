@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import usePlayerStore from '../stores/playerStore';
+import useI18nStore from '../stores/i18nStore';
 import { formatDuration } from '../utils/format';
+import { triggerHaptic } from '../utils/haptics';
 import {
   IconMusic,
   IconChevronRight,
@@ -18,11 +20,11 @@ import {
 import { downloadSongEverywhere, isSongOffline } from '../utils/storage';
 
 const CATEGORIES = [
-  { id: 'all', label: 'גלה הכל', flag: '✨' },
-  { id: 'hebrew', label: 'עברית', flag: '🇮🇱' },
-  { id: 'english', label: 'English', flag: '🌍' },
-  { id: 'spanish', label: 'Español', flag: '💃' },
-  { id: 'fresh', label: 'שירים שטרם שמעת', flag: '🔥' },
+  { id: 'all', labelKey: 'cat.all', flag: '✨' },
+  { id: 'hebrew', labelKey: 'cat.hebrew', flag: '🇮🇱' },
+  { id: 'english', labelKey: 'cat.english', flag: '🇺🇸' },
+  { id: 'spanish', labelKey: 'cat.spanish', flag: '🇪🇸' },
+  { id: 'fresh', labelKey: 'cat.fresh', flag: '🔥' },
 ];
 
 function getBadgeClass(lang) {
@@ -120,11 +122,17 @@ function ExploreSongCard({ song, isOff, isDling, onPlay, onDownload, onContextMe
 }
 
 export default function HomePage() {
+  const t = useI18nStore((s) => s.t);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [exploreSections, setExploreSections] = useState([]);
   const [categoryData, setCategoryData] = useState(null);
   const [isExploreLoading, setIsExploreLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Pull to Refresh state
+  const [pullDistance, setPullDistance] = useState(0);
+  const touchStartY = useRef(0);
+  const isPulling = useRef(false);
 
   const [recentSongs, setRecentSongs] = useState([]);
   const [playlists, setPlaylists] = useState([]);
@@ -285,24 +293,100 @@ export default function HomePage() {
 
   const greeting = (() => {
     const h = new Date().getHours();
-    if (h < 12) return 'בוקר טוב';
-    if (h < 18) return 'צהריים טובים';
-    return 'ערב טוב';
+    if (h >= 5 && h < 12) return t('greeting.morning');
+    if (h >= 12 && h < 17) return t('greeting.afternoon');
+    if (h >= 17 && h < 21) return t('greeting.evening');
+    return t('greeting.night');
   })();
 
+  // Touch Pull-to-Refresh Handlers
+  const handleTouchStart = (e) => {
+    if (window.scrollY <= 2) {
+      touchStartY.current = e.touches[0].clientY;
+      isPulling.current = true;
+    } else {
+      isPulling.current = false;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isPulling.current) return;
+    const currentY = e.touches[0].clientY;
+    const delta = currentY - touchStartY.current;
+    if (delta > 0) {
+      const dampened = Math.min(85, delta * 0.45);
+      setPullDistance(dampened);
+    } else {
+      setPullDistance(0);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (isPulling.current && pullDistance >= 55) {
+      triggerHaptic('impactMedium');
+      handleRefresh();
+    }
+    isPulling.current = false;
+    setPullDistance(0);
+  };
+
   return (
-    <div className="page">
-      {/* Header with Greeting & Subtitle */}
+    <div
+      className="page"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Pull to Refresh Indicator */}
+      {(pullDistance > 0 || isRefreshing) && (
+        <div
+          className={`pull-to-refresh-bar ${isRefreshing ? 'is-refreshing' : ''}`}
+          style={{
+            height: isRefreshing ? 42 : pullDistance,
+            opacity: Math.min(1, pullDistance / 40),
+          }}
+        >
+          <IconRefresh
+            size={18}
+            style={{
+              transform: isRefreshing ? 'none' : `rotate(${pullDistance * 4}deg)`,
+              transition: isRefreshing ? 'none' : 'transform 0.1s ease',
+            }}
+          />
+          <span>
+            {isRefreshing
+              ? t('home.refreshing')
+              : pullDistance >= 55
+              ? t('home.releaseToRefresh')
+              : t('home.pullToRefresh')}
+          </span>
+        </div>
+      )}
+
+      {/* Header with Greeting, Subtitle & Sleek Icon-Only Refresh Button */}
       <div className="page-header" style={{ marginBottom: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-          <div>
+        <div className="home-header-row">
+          <div className="home-header-titles">
             <h1 className="text-display" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {greeting} 🎵
             </h1>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-              גלה מוזיקה חדשה ושירים שלא שמעת מעולם בעברית, באנגלית ובספרדית
+              {t('home.subtitle')}
             </p>
           </div>
+
+          <button
+            className={`home-header-refresh-btn ${isRefreshing ? 'is-refreshing' : ''}`}
+            onClick={() => {
+              triggerHaptic('selection');
+              handleRefresh();
+            }}
+            disabled={isRefreshing || isExploreLoading}
+            title={t('home.refreshTooltip')}
+            aria-label={t('home.refreshTooltip')}
+          >
+            <IconRefresh size={18} />
+          </button>
         </div>
 
         {!serverOnline && (
@@ -317,12 +401,12 @@ export default function HomePage() {
               color: '#e74c3c',
             }}
           >
-            ⚠️ Server offline. Check Tailscale connection.
+            {t('home.serverOffline')}
           </div>
         )}
       </div>
 
-      {/* Explore Navigation Bar (Pills + Refresh Button) */}
+      {/* Explore Navigation Bar (Pills Only - clean, full-width, non-blocked) */}
       <div className="explore-nav-bar">
         <div className="explore-pills">
           {CATEGORIES.map((cat) => (
@@ -332,20 +416,10 @@ export default function HomePage() {
               onClick={() => handleSelectCategory(cat.id)}
             >
               <span>{cat.flag}</span>
-              <span>{cat.label}</span>
+              <span>{t(cat.labelKey)}</span>
             </button>
           ))}
         </div>
-
-        <button
-          className={`explore-refresh-btn ${isRefreshing ? 'is-refreshing' : ''}`}
-          onClick={handleRefresh}
-          disabled={isRefreshing || isExploreLoading}
-          title="רענן המלצות ושלוף שירים חדשים"
-        >
-          <IconRefresh size={14} />
-          <span>רענן שירים</span>
-        </button>
       </div>
 
       {/* Loading Skeleton */}
@@ -427,7 +501,7 @@ export default function HomePage() {
                         onClick={() => handlePlayAllCategory(categoryData.songs, false)}
                       >
                         <IconPlay size={18} />
-                        <span>נגן הכל</span>
+                        <span>{t('home.playAll')}</span>
                       </button>
                       <button
                         className="btn btn-secondary"
@@ -435,10 +509,10 @@ export default function HomePage() {
                         onClick={() => handlePlayAllCategory(categoryData.songs, true)}
                       >
                         <IconShuffle size={18} />
-                        <span>ערבב ונגן</span>
+                        <span>{t('home.shufflePlay')}</span>
                       </button>
                       <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginInlineStart: 'auto' }}>
-                        {categoryData.songs.length} שירים לגלות
+                        {categoryData.songs.length} {t('home.songsToDiscover')}
                       </span>
                     </div>
                   )}
@@ -478,9 +552,9 @@ export default function HomePage() {
               ) : (
                 <div className="empty-state">
                   <IconMusic size={48} />
-                  <p style={{ marginTop: 12 }}>לא נמצאו שירים כעת. נסה ללחוץ על &apos;רענן שירים&apos;</p>
+                  <p style={{ marginTop: 12 }}>{t('home.noSongs')}</p>
                   <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={handleRefresh}>
-                    רענן המלצות
+                    {t('home.refreshBtn')}
                   </button>
                 </div>
               )}
@@ -523,7 +597,7 @@ export default function HomePage() {
                           onClick={() => handleSelectCategory(sec.id)}
                           style={{ cursor: 'pointer' }}
                         >
-                          הצג הכל <IconChevronRight size={14} />
+                          {t('action.seeAll')} <IconChevronRight size={14} />
                         </button>
                       </div>
 
@@ -592,9 +666,9 @@ export default function HomePage() {
               {playlists.length > 0 && (
                 <div className="section" style={{ marginBottom: 32 }}>
                   <div className="section-header">
-                    <h2 className="section-title">הפלייליסטים שלך</h2>
+                    <h2 className="section-title">{t('home.playlists')}</h2>
                     <button className="section-link" onClick={() => navigate('/library')}>
-                      See all <IconChevronRight size={14} />
+                      {t('action.seeAll')} <IconChevronRight size={14} />
                     </button>
                   </div>
                   <div className="horizontal-scroll">
@@ -632,9 +706,9 @@ export default function HomePage() {
               {recentSongs.length > 0 && (
                 <div className="section" style={{ marginBottom: 32 }}>
                   <div className="section-header">
-                    <h2 className="section-title">נוספו לאחרונה</h2>
+                    <h2 className="section-title">{t('home.recentlyAdded')}</h2>
                     <button className="section-link" onClick={() => navigate('/library')}>
-                      See all <IconChevronRight size={14} />
+                      {t('action.seeAll')} <IconChevronRight size={14} />
                     </button>
                   </div>
                   {recentSongs.slice(0, 6).map((song) => (

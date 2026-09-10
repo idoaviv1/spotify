@@ -2,11 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import usePlayerStore from '../stores/playerStore';
+import useI18nStore from '../stores/i18nStore';
 import { formatDuration, formatFileSize } from '../utils/format';
 import { IconMusic, IconPlus, IconSearch, IconDelete, IconPlay, IconDownload, IconOffline, IconHeart } from '../components/common/Icons';
 import { isSongOffline, downloadSongEverywhere, getAllOfflineSongs, removeOfflineAudio, getOfflineStorageSize } from '../utils/storage';
 
 export default function LibraryPage() {
+  const t = useI18nStore((s) => s.t);
+  const language = useI18nStore((s) => s.language);
   const [tab, setTab] = useState('songs');
   const [songs, setSongs] = useState([]);
   const [playlists, setPlaylists] = useState([]);
@@ -199,15 +202,15 @@ export default function LibraryPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="text-display">Your Library</h1>
+        <h1 className="text-display">{t('library.title')}</h1>
         {stats && tab === 'songs' && (
           <div className="text-caption" style={{ marginTop: 4 }}>
-            {stats.total_songs} songs on server · {stats.total_duration_hours}h · {stats.total_size_mb} MB
+            {stats.total_songs} {t('library.songs')} · {stats.total_duration_hours}h · {stats.total_size_mb} MB
           </div>
         )}
         {tab === 'offline' && (
           <div className="text-caption" style={{ marginTop: 4, color: '#10b981' }}>
-            ✓ {offlineList.length} songs stored locally on device · {formatFileSize(offlineBytes)}
+            ✓ {offlineList.length} {t('library.songs')} · {formatFileSize(offlineBytes)}
           </div>
         )}
       </div>
@@ -238,22 +241,23 @@ export default function LibraryPage() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+            color: '#fff',
+            boxShadow: '0 4px 14px rgba(79, 70, 229, 0.4)',
             flexShrink: 0,
           }}
         >
-          <IconHeart size={26} filled={true} style={{ color: '#fff' }} />
+          <IconHeart size={24} filled={true} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-            Liked Songs · שירים שאהבתי 💚
+          <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)' }}>
+            {t('library.favorites')}
           </div>
           <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-            {favoriteIds.size} {favoriteIds.size === 1 ? 'favorite track' : 'favorite tracks'}
+            {favoriteIds.size} {favoriteIds.size === 1 ? 'track' : 'tracks'}
           </div>
         </div>
         <div style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.875rem' }}>
-          Open ›
+          {language === 'he' ? 'פתח ‹' : 'Open ›'}
         </div>
       </div>
 
@@ -286,13 +290,13 @@ export default function LibraryPage() {
             </div>
             <div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>נפח אחסון תפוס בטלפון:</span>
+                <span>{language === 'he' ? 'נפח אחסון תפוס בטלפון:' : 'Local Storage on Device:'}</span>
                 <span style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: 6, fontSize: '0.95rem' }}>
                   {formatFileSize(offlineBytes)}
                 </span>
               </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 3 }}>
-                {offlineList.length} שירים שמורים פיזית בזיכרון המכשיר · זמינים תמיד ללא אינטרנט
+              <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                {offlineList.length} {language === 'he' ? 'שירים שמורים פיזית בזיכרון המכשיר · זמינים תמיד ללא אינטרנט' : 'songs stored locally · available offline anytime'}
               </div>
             </div>
           </div>
@@ -302,13 +306,13 @@ export default function LibraryPage() {
       {/* Tabs */}
       <div className="tabs">
         <button className={`tab ${tab === 'songs' ? 'active' : ''}`} onClick={() => setTab('songs')}>
-          All Songs ({songs.length})
+          {t('library.songs')} ({songs.length})
         </button>
         <button className={`tab ${tab === 'offline' ? 'active' : ''}`} onClick={() => setTab('offline')}>
-          Downloaded ({offlineList.length}{offlineBytes > 0 ? ` · ${formatFileSize(offlineBytes)}` : ''})
+          {t('library.offline')} ({offlineList.length}{offlineBytes > 0 ? ` · ${formatFileSize(offlineBytes)}` : ''})
         </button>
         <button className={`tab ${tab === 'playlists' ? 'active' : ''}`} onClick={() => setTab('playlists')}>
-          Playlists
+          {t('library.playlists')}
         </button>
       </div>
 

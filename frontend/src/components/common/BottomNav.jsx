@@ -7,18 +7,20 @@ import {
   IconShield,
 } from './Icons';
 import useAuthStore from '../../stores/authStore';
+import useI18nStore from '../../stores/i18nStore';
 
 export default function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const isAdmin = useAuthStore((s) => s.isAdmin);
+  const t = useI18nStore((s) => s.t);
 
   const navItems = [
-    { path: '/', label: 'Home', icon: IconHome },
-    { path: '/search', label: 'Search', icon: IconSearch },
-    { path: '/library', label: 'Library', icon: IconLibrary },
-    ...(isAdmin ? [{ path: '/admin', label: 'Admin', icon: IconShield }] : []),
-    { path: '/settings', label: 'Settings', icon: IconSettings },
+    { path: '/', label: t('nav.home'), icon: IconHome },
+    { path: '/search', label: t('nav.search'), icon: IconSearch },
+    { path: '/library', label: t('nav.library'), icon: IconLibrary },
+    ...(isAdmin ? [{ path: '/admin', label: t('nav.admin'), icon: IconShield }] : []),
+    { path: '/settings', label: t('nav.settings'), icon: IconSettings },
   ];
 
   return (

@@ -1,6 +1,19 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import usePlayerStore from '../../stores/playerStore';
-import { IconClose } from '../common/Icons';
+import { useI18nStore } from '../../stores/i18nStore';
+import {
+  IconClose,
+  IconPlay,
+  IconPause,
+  IconSkipNext,
+  IconSkipPrev,
+  IconShuffle,
+  IconRepeat,
+  IconRepeatOne,
+  IconHeart,
+  IconMusic
+} from '../common/Icons';
+import { formatDuration } from '../../utils/format';
 
 export default function VisualizerModal() {
   const {
@@ -12,10 +25,30 @@ export default function VisualizerModal() {
     setVisualizerStyle,
     _analyserNode,
     initWebAudioPipeline,
+    currentTime,
+    duration,
+    seek,
+    playNext,
+    playPrev,
+    togglePlay,
+    shuffle,
+    toggleShuffle,
+    repeat,
+    toggleRepeat,
+    isFavorite,
+    toggleFavorite,
   } = usePlayerStore();
+
+  const t = useI18nStore((s) => s.t);
+  const [scrubTime, setScrubTime] = useState(null);
 
   const canvasRef = useRef(null);
   const animationFrameRef = useRef(null);
+
+  const currentSongId = currentSong ? String(currentSong.id || currentSong.songId || currentSong.youtube_id || '') : '';
+  const isLiked = isFavorite(currentSongId);
+  const activeTime = scrubTime !== null ? scrubTime : currentTime;
+  const progressPct = duration > 0 ? Math.min(100, Math.max(0, (activeTime / duration) * 100)) : 0;
 
   useEffect(() => {
     if (!isVisualizerOpen) {
@@ -171,78 +204,177 @@ export default function VisualizerModal() {
   if (!isVisualizerOpen) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 'var(--z-modal)',
-        background: '#0a0a0f',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+    <div className="visualizer-overlay">
+      <canvas ref={canvasRef} className="visualizer-canvas" />
 
-      {/* Top Controls Overlay */}
-      <div
-        style={{
-          position: 'relative',
-          zIndex: 10,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: 'calc(var(--safe-top) + 20px) 24px 16px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          {currentSong?.cover_art_url || currentSong?.thumbnail ? (
-            <img
-              src={currentSong.cover_art_url || currentSong.thumbnail}
-              alt=""
-              style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover', boxShadow: 'var(--shadow-md)' }}
-            />
-          ) : null}
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#ffffff', textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>
-              {currentSong?.title || 'Visualizer'}
-            </div>
-            <div style={{ fontSize: '0.8125rem', color: 'rgba(255,255,255,0.7)' }}>
-              {currentSong?.artist || 'Homeify'}
-            </div>
-          </div>
+      {/* Top Header Row */}
+      <header className="visualizer-header">
+        <div className="visualizer-badge">
+          <span className="visualizer-badge-dot" />
+          <span>{t('player.visualizer')}</span>
         </div>
 
-        {/* Style Selector & Close */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ display: 'flex', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)', borderRadius: 20, padding: 3 }}>
-            {['bars', 'wave', 'circle'].map((st) => (
+        <div className="visualizer-top-actions">
+          <div className="visualizer-modes">
+            {[
+              { id: 'bars', label: t('visualizer.bars') },
+              { id: 'wave', label: t('visualizer.wave') },
+              { id: 'circle', label: t('visualizer.circle') },
+            ].map((mode) => (
               <button
-                key={st}
-                onClick={() => setVisualizerStyle(st)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 16,
-                  border: 'none',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  textTransform: 'capitalize',
-                  background: visualizerStyle === st ? 'var(--accent)' : 'transparent',
-                  color: visualizerStyle === st ? '#000000' : 'rgba(255,255,255,0.8)',
-                  transition: 'all 0.2s ease',
-                }}
+                key={mode.id}
+                type="button"
+                className={`visualizer-mode-btn ${visualizerStyle === mode.id ? 'active' : ''}`}
+                onClick={() => setVisualizerStyle(mode.id)}
               >
-                {st}
+                {mode.label}
               </button>
             ))}
           </div>
 
           <button
-            className="btn-icon"
+            type="button"
+            className="visualizer-close-btn"
             onClick={toggleVisualizer}
-            style={{ width: 40, height: 40, background: 'rgba(0,0,0,0.5)', color: '#ffffff' }}
+            title={t('action.close')}
+            aria-label={t('action.close')}
           >
-            <IconClose size={22} />
+            <IconClose size={20} />
+          </button>
+        </div>
+      </header>
+
+      {/* Song Banner: Clean, full width, prominent single-line title & artist */}
+      <div className="visualizer-song-banner">
+        {currentSong?.cover_art_url || currentSong?.thumbnail ? (
+          <img
+            src={currentSong.cover_art_url || currentSong.thumbnail}
+            alt={currentSong.title || ''}
+            className="visualizer-song-cover"
+          />
+        ) : (
+          <div
+            className="visualizer-song-cover"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.08)'
+            }}
+          >
+            <IconMusic size={22} style={{ opacity: 0.7 }} />
+          </div>
+        )}
+
+        <div className="visualizer-song-info">
+          <div className="visualizer-song-title" title={currentSong?.title}>
+            {currentSong?.title || t('player.visualizer')}
+          </div>
+          <div className="visualizer-song-artist" title={currentSong?.artist}>
+            {currentSong?.artist || 'Homeify'}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className={`heart-btn ${isLiked ? 'liked' : ''}`}
+          onClick={() => currentSong && toggleFavorite(currentSong)}
+          style={{ flexShrink: 0, padding: 8 }}
+          title={isLiked ? 'Remove from Favorites' : 'Save to Favorites'}
+          aria-label="Favorite"
+        >
+          <IconHeart size={20} filled={isLiked} />
+        </button>
+      </div>
+
+      {/* Spacer to keep middle canvas area unobstructed */}
+      <div style={{ flex: 1, minHeight: 40 }} />
+
+      {/* Floating Bottom Playback Dock */}
+      <div className="visualizer-bottom-dock">
+        {/* Scrubber Row */}
+        <div className="visualizer-scrub-row">
+          <span className="visualizer-scrub-time">{formatDuration(activeTime)}</span>
+          <input
+            type="range"
+            className="visualizer-scrub-bar"
+            min={0}
+            max={duration || 100}
+            step={0.5}
+            value={activeTime}
+            onChange={(e) => setScrubTime(Number(e.target.value))}
+            onMouseUp={(e) => {
+              seek(Number(e.target.value));
+              setScrubTime(null);
+            }}
+            onTouchEnd={() => {
+              if (scrubTime !== null) {
+                seek(scrubTime);
+                setScrubTime(null);
+              }
+            }}
+            style={{
+              background: `linear-gradient(to right, var(--accent) ${progressPct}%, rgba(255, 255, 255, 0.18) ${progressPct}%)`
+            }}
+            aria-label="Seek track position"
+          />
+          <span className="visualizer-scrub-time">{formatDuration(duration)}</span>
+        </div>
+
+        {/* Transport Controls Row */}
+        <div className="visualizer-controls-row">
+          <button
+            type="button"
+            className={`visualizer-ctrl-btn ${shuffle ? 'active' : ''}`}
+            onClick={toggleShuffle}
+            title={t('player.shuffle')}
+            aria-label={t('player.shuffle')}
+          >
+            <IconShuffle size={20} />
+          </button>
+
+          <button
+            type="button"
+            className="visualizer-ctrl-btn"
+            onClick={playPrev}
+            title="Previous"
+            aria-label="Previous"
+          >
+            <IconSkipPrev size={24} />
+          </button>
+
+          <button
+            type="button"
+            className="visualizer-play-btn"
+            onClick={togglePlay}
+            title={isPlaying ? t('action.pause') : t('action.play')}
+            aria-label={isPlaying ? t('action.pause') : t('action.play')}
+          >
+            {isPlaying ? (
+              <IconPause size={24} />
+            ) : (
+              <IconPlay size={24} style={{ marginInlineStart: '2px' }} />
+            )}
+          </button>
+
+          <button
+            type="button"
+            className="visualizer-ctrl-btn"
+            onClick={playNext}
+            title="Next"
+            aria-label="Next"
+          >
+            <IconSkipNext size={24} />
+          </button>
+
+          <button
+            type="button"
+            className={`visualizer-ctrl-btn ${repeat !== 'off' ? 'active' : ''}`}
+            onClick={toggleRepeat}
+            title={`${t('player.repeat')}: ${repeat}`}
+            aria-label={`${t('player.repeat')}: ${repeat}`}
+          >
+            {repeat === 'one' ? <IconRepeatOne size={20} /> : <IconRepeat size={20} />}
           </button>
         </div>
       </div>

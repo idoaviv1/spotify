@@ -1,11 +1,13 @@
 import { useState, useCallback, useRef } from 'react';
 import api from '../api/client';
 import usePlayerStore from '../stores/playerStore';
+import useI18nStore from '../stores/i18nStore';
 import { formatDuration } from '../utils/format';
 import { IconSearch, IconPlay, IconDownload, IconPlus, IconMore, IconOffline } from '../components/common/Icons';
 import { downloadSongEverywhere, isSongOffline } from '../utils/storage';
 
 export default function SearchPage() {
+  const t = useI18nStore((s) => s.t);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -130,7 +132,7 @@ export default function SearchPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="text-display">Search</h1>
+        <h1 className="text-display">{t('search.title')}</h1>
       </div>
 
       {/* Search Input */}
@@ -139,7 +141,7 @@ export default function SearchPage() {
         <input
           className="search-input"
           type="text"
-          placeholder="What do you want to listen to?"
+          placeholder={t('search.placeholder')}
           value={query}
           onChange={handleInputChange}
           autoFocus
