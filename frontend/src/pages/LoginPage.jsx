@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../stores/authStore';
+import useI18nStore from '../stores/i18nStore';
 import api, { getConfiguredServerUrl, setServerUrl, TAILSCALE_DEFAULT_URL } from '../api/client';
-import { IconLock, IconUser, IconEye, IconEyeOff, IconShield, IconSettings } from '../components/common/Icons';
+import { IconLock, IconUser, IconEye, IconEyeOff, IconShield, IconSettings, IconGlobe } from '../components/common/Icons';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -10,6 +11,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Internationalization Store
+  const language = useI18nStore((s) => s.language);
+  const setLanguage = useI18nStore((s) => s.setLanguage);
+  const t = useI18nStore((s) => s.t);
+  const isHe = language === 'he';
 
   // Server URL settings & connection check
   const [showServerSettings, setShowServerSettings] = useState(false);
@@ -29,7 +36,7 @@ export default function LoginPage() {
   const handleTestConnection = async (targetUrl = null) => {
     const urlToCheck = (targetUrl || serverUrlInput || currentUrl).trim().replace(/\/$/, '');
     if (!urlToCheck) return;
-    setTestStatus({ type: 'testing', text: 'בודק חיבור לשרת...' });
+    setTestStatus({ type: 'testing', text: isHe ? 'בודק חיבור לשרת...' : 'Testing server connection...' });
     const start = performance.now();
     try {
       setServerUrl(urlToCheck);
@@ -38,75 +45,106 @@ export default function LoginPage() {
       const latency = Math.round(performance.now() - start);
       setTestStatus({
         type: 'success',
-        text: `חיבור תקין לשרת! (${res.service || 'Homeify'} v${res.version || '1.0'}, ${latency}ms)`
+        text: isHe ? `✓ מחובר לשרת בהצלחה (${latency}ms)!` : `✓ Connected successfully (${latency}ms)!`
       });
-      setErrorMessage('');
     } catch (err) {
       setTestStatus({
         type: 'error',
-        text: `חיבור נכשל: ${err.message || 'לא ניתן לתקשר עם השרת'}`
+        text: isHe ? `✗ לא ניתן להתחבר: ${err.message}` : `✗ Cannot connect: ${err.message}`
       });
     }
   };
 
   const handleSaveServerUrl = () => {
     const trimmed = serverUrlInput.trim().replace(/\/$/, '');
-    if (!trimmed) {
-      handleResetServerUrl();
-      return;
-    }
+    if (!trimmed) return;
     setServerUrl(trimmed);
     setCurrentUrl(trimmed);
+    setShowServerSettings(false);
     handleTestConnection(trimmed);
   };
 
   const handleResetServerUrl = () => {
     setServerUrl(TAILSCALE_DEFAULT_URL);
-    setServerUrlInput(TAILSCALE_DEFAULT_URL);
     setCurrentUrl(TAILSCALE_DEFAULT_URL);
+    setServerUrlInput(TAILSCALE_DEFAULT_URL);
+    setShowServerSettings(false);
     handleTestConnection(TAILSCALE_DEFAULT_URL);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username.trim() || !password) {
-      setErrorMessage('נא למלא שם משתמש וסיסמה');
-      return;
-    }
+    if (!username.trim() || !password) return;
 
     setIsSubmitting(true);
     setErrorMessage('');
 
-    const res = await login(username.trim(), password);
-    setIsSubmitting(false);
-
-    if (res.success) {
-      navigate('/', { replace: true });
-    } else {
-      setErrorMessage(res.error || 'שם משתמש או סיסמה שגויים');
-      if (res.error && (res.error.includes('לא ניתן להתחבר') || res.error.includes('fetch') || res.error.includes('תקשורת'))) {
-        setShowServerSettings(true);
-      }
+    try {
+      await login(username.trim(), password);
+      navigate('/');
+    } catch (err) {
+      console.error('Login error:', err);
+      setErrorMessage(
+        err.status === 401
+          ? (isHe ? 'שם משתמש או סיסמה שגויים' : 'Invalid username or password')
+          : (err.message || (isHe ? 'שגיאה בהתחברות למערכת. בדוק את החיבור לשרת.' : 'Failed to connect. Check server connection.'))
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="login-page-container">
-      <div className="login-card">
+    <div className="login-page-container" style={{ direction: isHe ? 'rtl' : 'ltr' }}>
+      <div className="login-card" style={{ position: 'relative' }}>
+        {/* Language Switcher Pill */}
+        <div style={{
+          display: 'flex',
+          justifyContent: isHe ? 'flex-start' : 'flex-end',
+          marginBottom: 10
+        }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setLanguage(isHe ? 'en' : 'he')}
+            style={{
+              padding: '5px 12px',
+              borderRadius: 'var(--radius-full)',
+              fontSize: '0.78rem',
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              color: 'var(--text-secondary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              transition: 'all var(--transition-fast)'
+            }}
+            title={isHe ? 'Switch to English' : 'החלף לעברית'}
+          >
+            <IconGlobe size={14} style={{ color: 'var(--accent)' }} />
+            <span style={{ fontWeight: 600 }}>{isHe ? 'English' : 'עברית'}</span>
+          </button>
+        </div>
+
         {/* Brand Icon & Title */}
         <div className="login-brand">
           <div className="login-brand-icon-wrapper">
-            <div className="sidebar-brand-icon" style={{ width: 32, height: 32 }}>
+            <div className="sidebar-brand-icon">
               <span className="brand-bar bar-1"></span>
               <span className="brand-bar bar-2"></span>
               <span className="brand-bar bar-3"></span>
               <span className="brand-bar bar-4"></span>
             </div>
           </div>
-          <h1 className="login-title">
-            Home<span className="login-title-accent">ify</span>
+
+          {/* Explicit LTR wrapper to guarantee "Homeify" ordering without browser reversal */}
+          <h1 className="login-title" dir="ltr" style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>
+            <span>Home</span><span className="login-title-accent">ify</span>
           </h1>
-          <p className="login-subtitle">התחבר לחשבון המוזיקה האישי שלך</p>
+          <p className="login-subtitle">
+            {t('login.subtitle') || 'התחבר לחשבון המוזיקה האישי שלך'}
+          </p>
         </div>
 
         {/* Error Alert */}
@@ -120,7 +158,7 @@ export default function LoginPage() {
                 style={{ fontSize: '0.78rem', color: '#1ed760', textDecoration: 'underline', padding: 0 }}
                 onClick={() => setShowServerSettings(true)}
               >
-                בדוק או שנה כתובת שרת ({currentUrl})
+                {isHe ? `בדוק או שנה כתובת שרת (${currentUrl})` : `Check or change server URL (${currentUrl})`}
               </button>
             )}
           </div>
@@ -129,7 +167,9 @@ export default function LoginPage() {
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label className="form-label" htmlFor="username">שם משתמש</label>
+            <label className="form-label" htmlFor="username">
+              {t('login.username') || 'שם משתמש'}
+            </label>
             <div className="input-with-icon">
               <span className="input-icon">
                 <IconUser size={18} />
@@ -138,7 +178,7 @@ export default function LoginPage() {
                 id="username"
                 type="text"
                 className="form-input"
-                placeholder="הזן שם משתמש..."
+                placeholder={t('login.usernamePlaceholder') || 'הזן שם משתמש...'}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoCapitalize="none"
@@ -150,7 +190,9 @@ export default function LoginPage() {
           </div>
 
           <div className="form-group">
-            <label className="form-label" htmlFor="password">סיסמה</label>
+            <label className="form-label" htmlFor="password">
+              {t('login.password') || 'סיסמה'}
+            </label>
             <div className="input-with-icon">
               <span className="input-icon">
                 <IconLock size={18} />
@@ -159,7 +201,7 @@ export default function LoginPage() {
                 id="password"
                 type={showPassword ? 'text' : 'password'}
                 className="form-input"
-                placeholder="הזן סיסמה..."
+                placeholder={t('login.passwordPlaceholder') || 'הזן סיסמה...'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
@@ -170,7 +212,7 @@ export default function LoginPage() {
                 className="btn-icon password-toggle-btn"
                 onClick={() => setShowPassword(!showPassword)}
                 tabIndex={-1}
-                title={showPassword ? 'הסתר סיסמה' : 'הצג סיסמה'}
+                title={showPassword ? (t('login.hidePassword') || 'הסתר סיסמה') : (t('login.showPassword') || 'הצג סיסמה')}
               >
                 {showPassword ? <IconEyeOff size={18} /> : <IconEye size={18} />}
               </button>
@@ -185,14 +227,14 @@ export default function LoginPage() {
             {isSubmitting ? (
               <div className="loading-spinner" style={{ width: 18, height: 18 }} />
             ) : (
-              'התחברות למערכת'
+              t('login.submit') || 'התחברות למערכת'
             )}
           </button>
         </form>
 
         {/* Server Connection Bar */}
         <div style={{
-          marginTop: '2px',
+          marginTop: '6px',
           padding: '8px 12px',
           background: 'rgba(255, 255, 255, 0.03)',
           borderRadius: 'var(--radius-md)',
@@ -211,7 +253,7 @@ export default function LoginPage() {
                 background: testStatus?.type === 'success' ? '#1ed760' : (testStatus?.type === 'error' ? '#ff6b6b' : '#3498db'),
                 display: 'inline-block'
               }}></span>
-              כתובת שרת:
+              {t('login.serverTitle') || 'כתובת שרת:'}
               <strong style={{ color: '#fff', direction: 'ltr' }}>{currentUrl || TAILSCALE_DEFAULT_URL}</strong>
             </span>
             <button
@@ -219,7 +261,7 @@ export default function LoginPage() {
               className="btn-icon"
               style={{ padding: 4, width: 'auto', height: 'auto', color: 'var(--text-secondary)' }}
               onClick={() => setShowServerSettings(!showServerSettings)}
-              title="הגדרות חיבור שרת"
+              title={isHe ? 'הגדרות חיבור שרת' : 'Server Settings'}
             >
               <IconSettings size={16} />
             </button>
@@ -250,7 +292,7 @@ export default function LoginPage() {
                   onClick={() => handleTestConnection()}
                   disabled={testStatus?.type === 'testing'}
                 >
-                  ⚡ בדוק חיבור
+                  {t('login.testConnection') || '⚡ בדוק חיבור'}
                 </button>
                 <button
                   type="button"
@@ -258,16 +300,16 @@ export default function LoginPage() {
                   style={{ fontSize: '0.78rem', padding: '5px 10px' }}
                   onClick={handleSaveServerUrl}
                 >
-                  שמור
+                  {t('login.save') || 'שמור'}
                 </button>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   style={{ fontSize: '0.78rem', padding: '5px 8px' }}
                   onClick={handleResetServerUrl}
-                  title="אפס ל-Tailscale ברירת מחדל"
+                  title={isHe ? 'אפס ל-Tailscale ברירת מחדל' : 'Reset to default Tailscale'}
                 >
-                  אפס
+                  {t('login.reset') || 'אפס'}
                 </button>
               </div>
 
@@ -290,11 +332,10 @@ export default function LoginPage() {
         <div className="login-security-notice">
           <IconShield size={16} />
           <span>
-            הגישה מורשית למשתמשים מורשים בלבד. יצירת חשבונות חדשים ואיפוס סיסמאות מתבצעים על ידי מנהל המערכת.
+            {t('login.securityNotice') || 'הגישה מורשית למשתמשים מורשים בלבד. יצירת חשבונות חדשים ואיפוס סיסמאות מתבצעים על ידי מנהל המערכת.'}
           </span>
         </div>
       </div>
     </div>
   );
 }
-

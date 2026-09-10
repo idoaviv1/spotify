@@ -101,6 +101,22 @@ const translations = {
     'player.repeat': 'חזרה על שיר',
     'player.volume': 'עוצמת שמע',
 
+    // Login Page
+    'login.subtitle': 'התחבר לחשבון המוזיקה האישי שלך',
+    'login.username': 'שם משתמש',
+    'login.usernamePlaceholder': 'הזן שם משתמש...',
+    'login.password': 'סיסמה',
+    'login.passwordPlaceholder': 'הזן סיסמה...',
+    'login.submit': 'התחברות למערכת',
+    'login.serverTitle': 'כתובת שרת:',
+    'login.testConnection': '⚡ בדוק חיבור',
+    'login.save': 'שמור',
+    'login.reset': 'אפס',
+    'login.securityNotice': 'הגישה מורשית למשתמשים מורשים בלבד. יצירת חשבונות חדשים ואיפוס סיסמאות מתבצעים על ידי מנהל המערכת.',
+    'login.showPassword': 'הצג סיסמה',
+    'login.hidePassword': 'הסתר סיסמה',
+    'login.langToggle': 'English',
+
     // Settings Page
     'settings.title': 'הגדרות מערכת',
     'settings.languageTitle': 'שפת ממשק (Interface Language)',
@@ -226,6 +242,22 @@ const translations = {
     'player.shuffle': 'Shuffle Songs',
     'player.repeat': 'Repeat Song',
     'player.volume': 'Volume',
+
+    // Login Page
+    'login.subtitle': 'Sign in to your personal music library',
+    'login.username': 'Username',
+    'login.usernamePlaceholder': 'Enter username...',
+    'login.password': 'Password',
+    'login.passwordPlaceholder': 'Enter password...',
+    'login.submit': 'Sign In',
+    'login.serverTitle': 'Server URL:',
+    'login.testConnection': '⚡ Test Connection',
+    'login.save': 'Save',
+    'login.reset': 'Reset',
+    'login.securityNotice': 'Access restricted to authorized users only. New accounts and password resets are managed by system administrator.',
+    'login.showPassword': 'Show password',
+    'login.hidePassword': 'Hide password',
+    'login.langToggle': 'עברית',
 
     // Settings Page
     'settings.title': 'Settings',

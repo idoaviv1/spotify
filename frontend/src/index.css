@@ -529,7 +529,10 @@ ul, ol {
 }
 
 .input-with-icon {
-  padding-left: 44px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
 }
 
 /* ─── Song Item ─── */
@@ -3029,17 +3032,38 @@ ul, ol {
 }
 
 .login-brand-icon-wrapper {
-  width: 58px;
-  height: 58px;
-  border-radius: 18px;
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
   background: rgba(29, 185, 84, 0.12);
   border: 1px solid rgba(29, 185, 84, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 24px rgba(29, 185, 84, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  margin-bottom: 2px;
+  box-shadow: 0 0 28px rgba(29, 185, 84, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  margin: 0 auto 4px;
 }
+
+.login-brand-icon-wrapper .sidebar-brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3.5px;
+  height: 28px;
+  width: 28px;
+  padding: 0;
+  margin: 0;
+}
+
+.login-brand-icon-wrapper .brand-bar {
+  width: 3.5px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.login-brand-icon-wrapper .brand-bar.bar-1 { height: 14px; }
+.login-brand-icon-wrapper .brand-bar.bar-2 { height: 26px; }
+.login-brand-icon-wrapper .brand-bar.bar-3 { height: 18px; }
+.login-brand-icon-wrapper .brand-bar.bar-4 { height: 22px; }
 
 .login-title {
   font-size: 2.5rem;
@@ -3051,6 +3075,8 @@ ul, ol {
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.7);
   display: inline-flex;
   align-items: center;
+  direction: ltr !important;
+  unicode-bidi: isolate;
 }
 
 .login-title-accent {
@@ -3126,8 +3152,41 @@ ul, ol {
   box-sizing: border-box;
 }
 
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .input-with-icon .form-input {
-  padding-left: 40px;
+  padding-left: 44px;
+  padding-right: 44px;
+}
+
+/* RTL-specific alignment for form icons */
+[dir="rtl"] .input-with-icon .input-icon,
+body.rtl-mode .input-with-icon .input-icon {
+  right: 14px;
+  left: auto;
+}
+
+[dir="rtl"] .input-with-icon .password-toggle-btn,
+body.rtl-mode .input-with-icon .password-toggle-btn {
+  left: 10px;
+  right: auto;
+}
+
+/* LTR-specific alignment for form icons */
+[dir="ltr"] .input-with-icon .input-icon,
+body.ltr-mode .input-with-icon .input-icon {
+  left: 14px;
+  right: auto;
+}
+
+[dir="ltr"] .input-with-icon .password-toggle-btn,
+body.ltr-mode .input-with-icon .password-toggle-btn {
+  right: 10px;
+  left: auto;
 }
 
 .form-input:focus {
@@ -3139,7 +3198,7 @@ ul, ol {
 
 .password-toggle-btn {
   position: absolute;
-  right: 8px;
+  right: 10px;
   color: var(--text-tertiary);
   padding: 6px;
   background: transparent;
@@ -3149,6 +3208,7 @@ ul, ol {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 2;
 }
 
 .password-toggle-btn:hover {

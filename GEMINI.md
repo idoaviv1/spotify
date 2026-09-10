@@ -1,3 +1,11 @@
+> [!important] הקוד של הפרויקט הועבר — 2026-09-10
+> העץ הזה חי עכשיו על הדיסק המשותף `/srv/homelab/code/…`, והנתיב הישן הוא **symlink** אליו.
+> תמשיך להשתמש בנתיב הישן כרגיל — git, venv, pnpm והכול עובד כרגיל.
+> **אל תחליף symlink בתיקייה אמיתית, ואל תשחזר `*.premigration` מעל symlink.**
+> אם נתיב נראה שבור, הדיסק המשותף פשוט לא מחובר: `sudo systemctl start homelab-disk`.
+> את השירותים מפעילים רק דרך systemd, לא ידנית.
+> ההסבר המלא: `/srv/homelab/docs/AGENTS-READ-THIS.md`
+
 # Homeify Development Guidelines
 
 ## Multi-Platform Synchronization Rule (מחייב)
