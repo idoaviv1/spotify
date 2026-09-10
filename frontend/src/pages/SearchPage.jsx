@@ -5,6 +5,7 @@ import useI18nStore from '../stores/i18nStore';
 import { formatDuration } from '../utils/format';
 import { IconSearch, IconPlay, IconDownload, IconPlus, IconMore, IconOffline } from '../components/common/Icons';
 import { downloadSongEverywhere, isSongOffline } from '../utils/storage';
+import useDownloadStore from '../stores/downloadStore';
 
 export default function SearchPage() {
   const t = useI18nStore((s) => s.t);
@@ -88,31 +89,11 @@ export default function SearchPage() {
   };
 
   const handleDownload = async (result) => {
-    const key = result.youtube_id || result.song_id;
-    if (!key || downloading[key]) return;
-    setDownloading(prev => ({ ...prev, [key]: true }));
     setShowMenu(null);
     try {
-      const saved = await downloadSongEverywhere(result);
-      setOfflineMap(prev => ({
-        ...prev,
-        [key]: true,
-        ...(saved.id ? { [saved.id]: true } : {}),
-        ...(result.youtube_id ? { [result.youtube_id]: true } : {}),
-      }));
-      setResults(prev => prev.map(item =>
-        (item.youtube_id === result.youtube_id || (item.song_id && item.song_id === saved.id))
-          ? { ...item, is_downloaded: true, song_id: saved.id }
-          : item
-      ));
+      await startDownload(result);
     } catch (err) {
       console.error('Download error:', err);
-    } finally {
-      setDownloading(prev => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
     }
   };
 
@@ -171,7 +152,8 @@ export default function SearchPage() {
           </div>
           {results.map((result) => {
             const isActive = currentSong?.youtube_url === result.youtube_url;
-            const isDownloadingThis = downloading[result.youtube_id];
+            const isDownloadingThis = isDownloading(result) || downloading[result.youtube_id];
+            const dlingPct = getProgress(result);
 
             return (
               <div
@@ -221,9 +203,19 @@ export default function SearchPage() {
 
                 {/* Action button */}
                 <div style={{ position: 'relative' }}>
-                  <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setShowMenu(showMenu === result.youtube_id ? null : result.youtube_id); }}>
+                  <button
+                    className={`btn-icon ${isDownloadingThis ? 'download-btn-live is-downloading' : ''}`}
+                    style={isDownloadingThis ? { width: 'auto', minWidth: 32, padding: '0 6px', fontSize: '0.75rem', fontWeight: 700 } : {}}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isDownloadingThis) {
+                        setShowMenu(showMenu === result.youtube_id ? null : result.youtube_id);
+                      }
+                    }}
+                    title={isDownloadingThis ? `${dlingPct}%` : "More Options"}
+                  >
                     {isDownloadingThis ? (
-                      <div className="loading-spinner" style={{ width: 18, height: 18 }} />
+                      <span>{dlingPct}%</span>
                     ) : (
                       <IconMore size={20} />
                     )}

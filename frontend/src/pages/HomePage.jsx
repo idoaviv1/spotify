@@ -18,6 +18,7 @@ import {
   IconMore,
 } from '../components/common/Icons';
 import { downloadSongEverywhere, isSongOffline } from '../utils/storage';
+import useDownloadStore from '../stores/downloadStore';
 
 const CATEGORIES = [
   { id: 'all', labelKey: 'cat.all', flag: '✨' },
@@ -43,8 +44,20 @@ function getBadgeClass(lang) {
 }
 
 // Explore Song Card Component
-function ExploreSongCard({ song, isOff, isDling, onPlay, onDownload, onContextMenu }) {
+function ExploreSongCard({ song, isOff, onPlay, onDownload, onContextMenu }) {
   const badgeClass = getBadgeClass(song.category || song.language);
+  const isDling = useDownloadStore((s) => s.isDownloading(song));
+  const dlingPct = useDownloadStore((s) => s.getProgress(song));
+  const startDownload = useDownloadStore((s) => s.startDownload);
+
+  const handleCardDownload = (e) => {
+    e.stopPropagation();
+    if (onDownload) {
+      onDownload(e, song);
+    } else {
+      startDownload(song);
+    }
+  };
 
   return (
     <div
@@ -71,13 +84,14 @@ function ExploreSongCard({ song, isOff, isDling, onPlay, onDownload, onContextMe
 
         {/* Offline Download Button */}
         <button
-          className={`explore-download-btn ${isOff ? 'is-offline' : ''}`}
-          onClick={(e) => onDownload(e, song)}
+          className={`explore-download-btn ${isOff ? 'is-offline' : ''} ${isDling ? 'is-downloading' : ''}`}
+          onClick={handleCardDownload}
           disabled={isDling}
-          title={isOff ? 'שמור לאופליין' : 'הורד לאופליין'}
+          title={isDling ? `${dlingPct}%` : (isOff ? 'שמור לאופליין' : 'הורד לאופליין')}
+          style={isDling ? { width: 'auto', minWidth: 32, padding: '0 6px', fontSize: '0.75rem', fontWeight: 700 } : {}}
         >
           {isDling ? (
-            <div className="loading-spinner" style={{ width: 14, height: 14 }} />
+            <span>{dlingPct}%</span>
           ) : isOff ? (
             <IconOffline size={16} />
           ) : (
@@ -234,30 +248,27 @@ export default function HomePage() {
     loadExploreData(selectedCategory, true);
   };
 
+  const startDownloadGlobal = useDownloadStore((s) => s.startDownload);
+
   const handleDownloadSong = async (e, song) => {
     e.stopPropagation();
     const ytId = song.youtube_id || song.id;
-    if (!ytId || downloadingRec[ytId]) return;
+    if (!ytId) return;
 
-    setDownloadingRec((prev) => ({ ...prev, [ytId]: true }));
     try {
-      const saved = await downloadSongEverywhere(song);
-      const savedId = saved.id || ytId;
-      setRecOfflineMap((prev) => ({
-        ...prev,
-        [ytId]: true,
-        [savedId]: true,
-        ...(song.id ? { [song.id]: true } : {}),
-        ...(song.youtube_id ? { [song.youtube_id]: true } : {}),
-      }));
+      const saved = await startDownloadGlobal(song);
+      if (saved) {
+        const savedId = saved.id || ytId;
+        setRecOfflineMap((prev) => ({
+          ...prev,
+          [ytId]: true,
+          [savedId]: true,
+          ...(song.id ? { [song.id]: true } : {}),
+          ...(song.youtube_id ? { [song.youtube_id]: true } : {}),
+        }));
+      }
     } catch (err) {
       console.error('Failed to download song:', err);
-    } finally {
-      setDownloadingRec((prev) => {
-        const next = { ...prev };
-        delete next[ytId];
-        return next;
-      });
     }
   };
 

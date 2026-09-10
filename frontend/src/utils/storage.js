@@ -309,7 +309,23 @@ export async function getOfflineCover(songId) {
  * Stores audio blob into the app-private IndexedDB sandbox (does not pollute phone's public file gallery).
  * Guarantees 100% offline availability on phone, and server availability on Windows.
  */
-export async function downloadSongEverywhere(song) {
+export async function downloadSongEverywhere(song, onProgress = null) {
+  const report = (percent, stage, extra = {}) => {
+    if (typeof onProgress === "function") {
+      try {
+        onProgress({
+          percent: Math.min(100, Math.max(0, Math.round(percent))),
+          stage,
+          ...extra
+        });
+      } catch (e) {
+        console.warn("Error in onProgress callback:", e);
+      }
+    }
+  };
+
+  report(5, "preparing");
+
   let serverSong = { ...song };
 
   const ytUrl = serverSong.youtube_url || (serverSong.youtube_id ? `https://www.youtube.com/watch?v=${serverSong.youtube_id}` : null);
@@ -319,6 +335,7 @@ export async function downloadSongEverywhere(song) {
 
   // 1. Ensure the song is downloaded on the server
   if (!serverSong.id || !serverSong.is_downloaded) {
+    report(15, "preparing");
     if (ytUrl) {
       const res = await api.downloadSong(
         ytUrl,
@@ -329,22 +346,27 @@ export async function downloadSongEverywhere(song) {
         serverSong = { ...serverSong, ...res.song, is_downloaded: true };
       }
     }
+    report(25, "preparing");
+  } else {
+    report(25, "preparing");
   }
 
   const primaryId = serverSong.id || serverSong.youtube_id;
   if (!primaryId) {
-    throw new Error('Cannot download song without an ID or YouTube URL');
+    throw new Error("Cannot download song without an ID or YouTube URL");
   }
 
-  // 2. Fetch audio file stream from server
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('homeify_token') : null;
+  // 2. Fetch audio file stream from server with progress streaming
+  const token = typeof localStorage !== "undefined" ? localStorage.getItem("homeify_token") : null;
   const streamUrl = serverSong.id
     ? api.getStreamUrl(serverSong.id)
     : (ytUrl ? api.getYoutubeStreamUrl(ytUrl) : null);
 
   if (!streamUrl) {
-    throw new Error('No stream URL available to download song');
+    throw new Error("No stream URL available to download song");
   }
+
+  report(28, "downloading");
 
   const audioRes = await fetch(streamUrl, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -352,7 +374,40 @@ export async function downloadSongEverywhere(song) {
   if (!audioRes.ok) {
     throw new Error(`Failed to download audio data: HTTP ${audioRes.status}`);
   }
-  const audioBlob = await audioRes.blob();
+
+  // Read response stream chunks to calculate real progress
+  const contentLength = audioRes.headers.get("content-length");
+  const totalBytes = contentLength ? parseInt(contentLength, 10) : (serverSong.file_size || 0);
+
+  let audioBlob;
+  if (audioRes.body && typeof audioRes.body.getReader === "function") {
+    const reader = audioRes.body.getReader();
+    const chunks = [];
+    let receivedBytes = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      receivedBytes += value.length;
+
+      if (totalBytes > 0) {
+        const streamPct = 28 + (receivedBytes / totalBytes) * 60; // 28% -> 88%
+        report(streamPct, "downloading", { receivedBytes, totalBytes });
+      } else {
+        const estTotal = 4.5 * 1024 * 1024;
+        const streamPct = Math.min(88, 28 + (receivedBytes / estTotal) * 60);
+        report(streamPct, "downloading", { receivedBytes, totalBytes: totalBytes || estTotal });
+      }
+    }
+    audioBlob = new Blob(chunks);
+  } else {
+    report(60, "downloading");
+    audioBlob = await audioRes.blob();
+    report(88, "downloading");
+  }
+
+  report(90, "saving");
 
   // 3. Cache cover art if available and generate Data URL for 100% offline view
   let coverDataUrl = null;
@@ -366,9 +421,11 @@ export async function downloadSongEverywhere(song) {
         coverDataUrl = await blobToDataUrl(coverBlob);
       }
     } catch (e) {
-      console.warn('Could not cache cover art offline:', e);
+      console.warn("Could not cache cover art offline:", e);
     }
   }
+
+  report(95, "saving");
 
   // 4. Save to device IndexedDB private sandbox
   await saveAudioOffline(primaryId, audioBlob, {
@@ -378,6 +435,8 @@ export async function downloadSongEverywhere(song) {
     youtube_url: song.youtube_url || serverSong.youtube_url,
     cover_data_url: coverDataUrl,
   });
+
+  report(100, "completed");
 
   return {
     ...serverSong,

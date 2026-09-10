@@ -6,6 +6,8 @@ import useI18nStore from '../stores/i18nStore';
 import { formatDuration, formatFileSize } from '../utils/format';
 import { IconMusic, IconPlus, IconSearch, IconDelete, IconPlay, IconDownload, IconOffline, IconHeart } from '../components/common/Icons';
 import { isSongOffline, downloadSongEverywhere, getAllOfflineSongs, removeOfflineAudio, getOfflineStorageSize } from '../utils/storage';
+import useDownloadStore from '../stores/downloadStore';
+import ActiveDownloadsBanner from '../components/common/ActiveDownloadsBanner';
 
 export default function LibraryPage() {
   const t = useI18nStore((s) => s.t);
@@ -32,6 +34,9 @@ export default function LibraryPage() {
   const toggleFavorite = usePlayerStore((s) => s.toggleFavorite);
   const favoriteIds = usePlayerStore((s) => s.favoriteIds);
   const navigate = useNavigate();
+  const startDownload = useDownloadStore((s) => s.startDownload);
+  const isDownloading = useDownloadStore((s) => s.isDownloading);
+  const getProgress = useDownloadStore((s) => s.getProgress);
 
   // 1. Instantly load local offline songs from IndexedDB (0ms network delay)
   const loadOfflineDataImmediately = useCallback(async () => {
@@ -124,6 +129,14 @@ export default function LibraryPage() {
     };
   }, [loadData]);
 
+  useEffect(() => {
+    const onOfflineUpdated = async () => {
+      await loadOfflineDataImmediately();
+    };
+    window.addEventListener('homeify:offline-updated', onOfflineUpdated);
+    return () => window.removeEventListener('homeify:offline-updated', onOfflineUpdated);
+  }, [loadOfflineDataImmediately]);
+
   const filteredSongs = (tab === 'offline' ? offlineList : songs).filter(s =>
     !searchQuery ||
     s.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -170,32 +183,10 @@ export default function LibraryPage() {
 
   const handleCacheOffline = async (e, song) => {
     e.stopPropagation();
-    const id = song.id || song.songId || song.youtube_id;
-    if (!id || cachingIds[id]) return;
-
-    // Mark ONLY this song as downloading (supports concurrent downloads!)
-    setCachingIds(prev => ({ ...prev, [id]: true }));
     try {
-      const saved = await downloadSongEverywhere(song);
-      const savedId = saved.id || id;
-      setOfflineSongs(prev => ({
-        ...prev,
-        [id]: true,
-        [savedId]: true,
-        ...(song.youtube_id ? { [song.youtube_id]: true } : {})
-      }));
-      const localCached = await getAllOfflineSongs();
-      setOfflineList(localCached);
-      const bytes = await getOfflineStorageSize();
-      setOfflineBytes(bytes);
+      await startDownload(song);
     } catch (err) {
       console.error('Cache error:', err);
-    } finally {
-      setCachingIds(prev => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
     }
   };
 
@@ -260,6 +251,9 @@ export default function LibraryPage() {
           {language === 'he' ? 'פתח ‹' : 'Open ›'}
         </div>
       </div>
+
+      {/* Real-time Active Downloads Banner */}
+      <ActiveDownloadsBanner />
 
       {/* Offline Storage Information Card */}
       {tab === 'offline' && (
@@ -360,7 +354,8 @@ export default function LibraryPage() {
               const id = song.id || song.songId;
               const isOff = offlineSongs[id] || tab === 'offline';
               const isCurr = currentSong?.id === id || (currentSong?.title === song.title && currentSong?.artist === song.artist);
-              const isDling = Boolean(cachingIds[id] || cachingIds[song.songId] || (song.youtube_id && cachingIds[song.youtube_id]));
+              const isDling = isDownloading(song) || Boolean(cachingIds[id] || cachingIds[song.songId] || (song.youtube_id && cachingIds[song.youtube_id]));
+              const dlingPct = getProgress(song);
 
               return (
                 <div
@@ -401,14 +396,14 @@ export default function LibraryPage() {
                     <span className="song-duration">{formatDuration(song.duration)}</span>
                     {!isOff && (
                       <button
-                        className="btn-icon"
-                        style={{ width: 32, height: 32 }}
+                        className={`btn-icon ${isDling ? 'download-btn-live is-downloading' : ''}`}
+                        style={{ minWidth: 32, height: 32 }}
                         onClick={(e) => handleCacheOffline(e, song)}
                         disabled={isDling}
-                        title="Save to Phone"
+                        title={isDling ? `${dlingPct}%` : "Save to Phone"}
                       >
                         {isDling ? (
-                          <div className="loading-spinner" style={{ width: 14, height: 14 }} />
+                          <span>{dlingPct}%</span>
                         ) : (
                           <IconDownload size={16} style={{ color: 'var(--text-tertiary)' }} />
                         )}
