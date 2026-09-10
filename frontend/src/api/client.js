@@ -255,6 +255,15 @@ export const api = {
   importPlaylist: (url, name = '') =>
     request('/api/playlists/import', { method: 'POST', body: { url, name } }),
 
+  previewImportPlaylist: (url, source = null) =>
+    request('/api/playlists/import-preview', { method: 'POST', body: { url, source } }),
+
+  importExternalPlaylist: (payload) =>
+    request('/api/playlists/import-external', { method: 'POST', body: payload }),
+
+  resolveSongTrack: (songId) =>
+    request('/api/music/resolve-song/' + encodeURIComponent(songId), { method: 'POST' }),
+
   // Favorites / Liked Songs
   getFavorites: () => request('/api/favorites'),
 

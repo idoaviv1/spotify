@@ -4,7 +4,7 @@ import uuid
 import asyncio
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -45,6 +45,18 @@ class ReorderPlaylistRequest(BaseModel):
 class ImportPlaylistRequest(BaseModel):
     url: str
     name: str | None = None
+
+
+class ImportPreviewRequest(BaseModel):
+    url: str
+    source: str | None = None
+
+
+class ImportExternalRequest(BaseModel):
+    url: str
+    name: str | None = None
+    source: str | None = None
+    link_audio: bool = True
 
 
 def _get_or_create_favorites(db: Session, user_id: str | None = None) -> Playlist:
@@ -451,6 +463,110 @@ async def import_playlist(
 
     return {
         "status": "imported",
+        "playlist": new_playlist.to_dict(include_songs=True),
+        "total_songs": added_count,
+    }
+
+
+@router.post("/import-preview")
+async def preview_import_playlist(
+    req: ImportPreviewRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Preview metadata and tracklist of an external playlist before importing."""
+    from services.importer import PlaylistImporterService
+    try:
+        data = await asyncio.to_thread(PlaylistImporterService.get_preview, req.url.strip(), req.source)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to preview playlist: {str(e)}")
+
+
+@router.post("/import-external")
+async def import_external_playlist(
+    req: ImportExternalRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Import an external playlist from Spotify, Apple Music, YouTube, or Text list."""
+    from services.importer import PlaylistImporterService, resolve_playlist_songs_background
+    try:
+        preview = await asyncio.to_thread(PlaylistImporterService.get_preview, req.url.strip(), req.source)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to extract playlist: {str(e)}")
+
+    tracks = preview.get("tracks", [])
+    if not tracks:
+        raise HTTPException(status_code=404, detail="No tracks found in the provided source")
+
+    playlist_name = req.name.strip() if (req.name and req.name.strip()) else preview.get("title", "Imported Playlist")
+    new_playlist = Playlist(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        name=playlist_name,
+        description=preview.get("description", f"Imported from {preview.get('platform', 'external')}"),
+        cover_image=preview.get("cover_url"),
+        is_favorites=False,
+    )
+    db.add(new_playlist)
+    db.flush()
+
+    initial_resolve_count = 10 if req.link_audio else 0
+    first_batch = tracks[:initial_resolve_count]
+    if first_batch:
+        first_batch = await asyncio.to_thread(PlaylistImporterService.resolve_tracks_batch, first_batch)
+
+    resolved_tracks = first_batch + tracks[initial_resolve_count:]
+
+    added_count = 0
+    for idx, track in enumerate(resolved_tracks):
+        yt_id = track.get("youtube_id")
+        existing_song = None
+        if yt_id:
+            existing_song = db.query(Song).filter(Song.youtube_id == yt_id).first()
+        if not existing_song:
+            existing_song = (
+                db.query(Song)
+                .filter(func.lower(Song.title) == track["title"].lower(), func.lower(Song.artist) == track["artist"].lower())
+                .first()
+            )
+
+        if existing_song:
+            song_to_link = existing_song
+            if yt_id and not song_to_link.youtube_id:
+                song_to_link.youtube_id = yt_id
+                song_to_link.youtube_url = track.get("youtube_url")
+        else:
+            song_to_link = Song(
+                id=str(uuid.uuid4()),
+                title=track.get("title", "Unknown"),
+                artist=track.get("artist", "Unknown Artist"),
+                duration=track.get("duration", 0),
+                youtube_id=yt_id,
+                youtube_url=track.get("youtube_url") or (f"https://www.youtube.com/watch?v={yt_id}" if yt_id else None),
+                cover_art_url=track.get("cover_url") or preview.get("cover_url"),
+            )
+            db.add(song_to_link)
+            db.flush()
+
+        ps = PlaylistSong(
+            playlist_id=new_playlist.id,
+            song_id=song_to_link.id,
+            position=idx,
+        )
+        db.add(ps)
+        added_count += 1
+
+    db.commit()
+    db.refresh(new_playlist)
+
+    if req.link_audio and len(tracks) > initial_resolve_count:
+        background_tasks.add_task(resolve_playlist_songs_background, new_playlist.id)
+
+    return {
+        "status": "imported",
+        "platform": preview.get("platform"),
         "playlist": new_playlist.to_dict(include_songs=True),
         "total_songs": added_count,
     }

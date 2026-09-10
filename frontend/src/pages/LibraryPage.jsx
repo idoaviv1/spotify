@@ -1,10 +1,11 @@
+import PlaylistImportModal from '../components/Import/PlaylistImportModal';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import usePlayerStore from '../stores/playerStore';
 import useI18nStore from '../stores/i18nStore';
 import { formatDuration, formatFileSize } from '../utils/format';
-import { IconMusic, IconPlus, IconSearch, IconDelete, IconPlay, IconDownload, IconOffline, IconHeart } from '../components/common/Icons';
+import { IconMusic, IconPlus, IconSearch, IconDelete, IconPlay, IconDownload, IconOffline, IconHeart, IconSparkles } from '../components/common/Icons';
 import { isSongOffline, downloadSongEverywhere, getAllOfflineSongs, removeOfflineAudio, getOfflineStorageSize } from '../utils/storage';
 import useDownloadStore from '../stores/downloadStore';
 import ActiveDownloadsBanner from '../components/common/ActiveDownloadsBanner';
@@ -25,6 +26,7 @@ export default function LibraryPage() {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [offlineSongs, setOfflineSongs] = useState({});
   const [cachingIds, setCachingIds] = useState({});
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const playSong = usePlayerStore((s) => s.playSong);
   const playList = usePlayerStore((s) => s.playList);
@@ -451,13 +453,26 @@ export default function LibraryPage() {
       {/* Playlists Tab */}
       {tab === 'playlists' && (
         <>
-          <button
-            className="btn btn-secondary"
-            style={{ marginBottom: 16, width: '100%' }}
-            onClick={() => setShowCreatePlaylist(true)}
-          >
-            <IconPlus size={18} /> Create Playlist
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowCreatePlaylist(true)}
+            >
+              <IconPlus size={18} /> {language === 'he' ? 'צור פלייליסט' : 'Create Playlist'}
+            </button>
+            <button
+              className="btn btn-secondary"
+              style={{
+                borderColor: 'rgba(29, 185, 84, 0.4)',
+                background: 'rgba(29, 185, 84, 0.08)',
+                color: '#10b981',
+                fontWeight: 600,
+              }}
+              onClick={() => setIsImportModalOpen(true)}
+            >
+              <IconSparkles size={18} /> {language === 'he' ? 'ייבא מ-Spotify / Apple' : 'Import Playlist'}
+            </button>
+          </div>
 
           {showCreatePlaylist && (
             <div className="glass-card" style={{ marginBottom: 16 }}>
@@ -523,6 +538,11 @@ export default function LibraryPage() {
           )}
         </>
       )}
+      <PlaylistImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportSuccess={() => loadData()}
+      />
     </div>
   );
 }

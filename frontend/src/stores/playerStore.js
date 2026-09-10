@@ -237,7 +237,22 @@ const usePlayerStore = create((set, get) => ({
       }
 
       // 3. If it has a YouTube URL or ID, stream via server proxy (bypasses 403 & unsupported codecs)
-      const ytUrl = song.youtube_url || (song.youtube_id ? `https://www.youtube.com/watch?v=${song.youtube_id}` : null);
+      let ytUrl = song.youtube_url || (song.youtube_id ? `https://www.youtube.com/watch?v=${song.youtube_id}` : null);
+
+      // On-demand audio stream resolution if track was imported from Spotify/Apple Music
+      if (!audioSrc && !ytUrl && song.id) {
+        try {
+          const res = await api.resolveSongTrack(song.id);
+          if (res?.song?.youtube_url || res?.song?.youtube_id) {
+            song.youtube_url = res.song.youtube_url;
+            song.youtube_id = res.song.youtube_id;
+            ytUrl = song.youtube_url || `https://www.youtube.com/watch?v=${song.youtube_id}`;
+          }
+        } catch (resolveErr) {
+          console.warn('On-demand stream resolution failed:', resolveErr);
+        }
+      }
+
       if (!audioSrc && ytUrl) {
         audioSrc = api.getYoutubeStreamUrl(ytUrl);
       }

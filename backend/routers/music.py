@@ -553,6 +553,37 @@ async def upload_audio_file(
     return {"status": "uploaded", "song": song.to_dict()}
 
 
+@router.post("/resolve-song/{song_id}")
+async def resolve_song_audio(
+    song_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Resolve YouTube audio stream for a song if it is not yet linked."""
+    song = db.query(Song).filter(Song.id == song_id).first()
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    if song.youtube_id and song.youtube_url:
+        return {"status": "already_resolved", "song": song.to_dict()}
+
+    from services.youtube import YouTubeService
+    query = f"{song.artist} {song.title}".strip()
+    res = await asyncio.to_thread(YouTubeService.search, query, 1)
+    if res and len(res) > 0:
+        first = res[0]
+        song.youtube_id = first.get("youtube_id")
+        song.youtube_url = first.get("youtube_url")
+        if not song.duration and first.get("duration"):
+            song.duration = first.get("duration")
+        if not song.cover_art_url and first.get("thumbnail"):
+            song.cover_art_url = first.get("thumbnail")
+        db.commit()
+        db.refresh(song)
+        return {"status": "resolved", "song": song.to_dict()}
+
+    raise HTTPException(status_code=404, detail="Could not find audio stream for song")
+
+
 async def _enrich_song_metadata(song_id: str, title: str, artist: str):
     """Background task to enrich song metadata from MusicBrainz."""
     try:

@@ -1,3 +1,4 @@
+import PlaylistImportModal, { IconSpotify, IconAppleMusic, IconYouTube, IconTextList } from '../components/Import/PlaylistImportModal';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { getConfiguredServerUrl, setServerUrl, TAILSCALE_DEFAULT_URL } from '../api/client';
@@ -38,6 +39,8 @@ export default function SettingsPage({ onOpenEqualizer }) {
   const t = useI18nStore((s) => s.t);
 
   const [serverInput, setServerInput] = useState(getConfiguredServerUrl());
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importModalPlatform, setImportModalPlatform] = useState('spotify');
   const [testingStatus, setTestingStatus] = useState(null); // 'testing' | 'success' | 'error'
   const [statusMessage, setStatusMessage] = useState('');
   const [storageBytes, setStorageBytes] = useState(0);
@@ -570,66 +573,152 @@ export default function SettingsPage({ onOpenEqualizer }) {
         </div>
       </div>
 
-      {/* ─── YouTube Playlist Importer ─── */}
+      {/* ─── Multi-Platform Playlist Importer (Spotify, Apple Music, YouTube) ─── */}
       <div className="settings-group">
         <div className="settings-group-title">
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <IconDownload size={18} style={{ color: 'var(--accent)' }} />
-            Import Playlist from YouTube (ייבוא פלייליסט)
+            {t('settings.importTitle') || 'ייבוא מ-Spotify, Apple Music ו-YouTube'}
           </span>
         </div>
-        <div className="glass-card">
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>
-            Paste any public YouTube playlist or mix URL to import all its songs directly into your Homeify library:
+        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+            {t('settings.importDesc') || 'ייבא פלייליסטים, אלבומים ורשימות שירים מחשבונות Spotify ו-Apple Music ישירות ל-Homeify בלחיצה אחת:'}
           </p>
-          <form onSubmit={handleImportPlaylist} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <input
-              className="input"
-              type="url"
-              placeholder="https://www.youtube.com/playlist?list=..."
-              value={importUrl}
-              onChange={(e) => setImportUrl(e.target.value)}
-              disabled={isImporting}
-              required
-            />
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="input"
-                type="text"
-                placeholder="Custom playlist title (optional)"
-                value={importName}
-                onChange={(e) => setImportName(e.target.value)}
-                disabled={isImporting}
-                style={{ flex: 1 }}
-              />
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={isImporting || !importUrl.trim()}
-                style={{ padding: '8px 20px', fontSize: '0.8125rem' }}
-              >
-                {isImporting ? 'Importing...' : 'Import Playlist'}
-              </button>
-            </div>
-          </form>
 
-          {importStatus && (
-            <div style={{
-              marginTop: 12,
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '0.8125rem',
-              background: importStatus.type === 'success' ? 'rgba(29, 185, 84, 0.15)' : 'rgba(231, 76, 60, 0.15)',
-              border: `1px solid ${importStatus.type === 'success' ? 'var(--accent)' : 'var(--danger)'}`,
-              color: importStatus.type === 'success' ? 'var(--accent-hover)' : 'var(--danger)',
-            }}>
-              {importStatus.text}
-            </div>
-          )}
+          {/* Quick Platform Cards Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setImportModalPlatform('spotify');
+                setIsImportModalOpen(true);
+              }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 8,
+                padding: '14px 10px',
+                borderRadius: 14,
+                background: 'rgba(29, 185, 84, 0.08)',
+                border: '1px solid rgba(29, 185, 84, 0.3)',
+                color: '#1DB954',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all var(--transition-fast)',
+              }}
+            >
+              <IconSpotify size={24} />
+              <span style={{ fontSize: '0.8125rem' }}>Spotify</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setImportModalPlatform('apple_music');
+                setIsImportModalOpen(true);
+              }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 8,
+                padding: '14px 10px',
+                borderRadius: 14,
+                background: 'rgba(250, 36, 60, 0.08)',
+                border: '1px solid rgba(250, 36, 60, 0.3)',
+                color: '#FA243C',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all var(--transition-fast)',
+              }}
+            >
+              <IconAppleMusic size={24} />
+              <span style={{ fontSize: '0.8125rem' }}>Apple Music</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setImportModalPlatform('youtube');
+                setIsImportModalOpen(true);
+              }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 8,
+                padding: '14px 10px',
+                borderRadius: 14,
+                background: 'rgba(255, 0, 0, 0.08)',
+                border: '1px solid rgba(255, 0, 0, 0.3)',
+                color: '#FF4444',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all var(--transition-fast)',
+              }}
+            >
+              <IconYouTube size={24} />
+              <span style={{ fontSize: '0.8125rem' }}>YouTube</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setImportModalPlatform('text');
+                setIsImportModalOpen(true);
+              }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 8,
+                padding: '14px 10px',
+                borderRadius: 14,
+                background: 'rgba(139, 92, 246, 0.08)',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                color: '#A78BFA',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all var(--transition-fast)',
+              }}
+            >
+              <IconTextList size={24} />
+              <span style={{ fontSize: '0.8125rem' }}>{language === 'he' ? 'רשימת שירים' : 'Text List'}</span>
+            </button>
+          </div>
+
+          {/* Quick Hub Launch Button */}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setIsImportModalOpen(true)}
+            style={{
+              width: '100%',
+              padding: '12px 18px',
+              borderRadius: 12,
+              fontWeight: 700,
+              fontSize: '0.875rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              background: 'linear-gradient(135deg, #1DB954 0%, #059669 50%, #4f46e5 100%)',
+              boxShadow: '0 4px 16px rgba(16, 185, 129, 0.3)',
+            }}
+          >
+            <IconDownload size={18} />
+            <span>{t('settings.importBtn') || 'פתח מרכז ייבוא (Import Hub)'}</span>
+          </button>
         </div>
       </div>
 
-      {/* ─── Library Backup & Restore ─── */}
+            {/* ─── Library Backup & Restore ─── */}
       <div className="settings-group">
         <div className="settings-group-title">
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
